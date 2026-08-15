@@ -1,0 +1,9 @@
+{% extends 'panel/base.html' %}
+{% block title %}{% if is_create %}Nuevo paciente{% else %}Editar paciente{% endif %}{% endblock %}
+{% block content %}
+  {% if is_create %}
+    {% include 'panel/partials/patient_editor.html' with editor_mode='admin' editor_title='Nuevo paciente' patient_record=patient %}
+  {% else %}
+    {% include 'panel/partials/patient_editor.html' with editor_mode='admin' editor_title='Editar paciente' patient_record=patient %}
+  {% endif %}
+{% endblock %}

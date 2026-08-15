@@ -1,0 +1,58 @@
+{% extends 'panel/base.html' %}{% load panel_extras %}
+{% block title %}Productos{% endblock %}
+{% block content %}
+<section class="products-page">
+  <header class="products-heading">
+    <div><h1>Productos</h1><p>Crea, edita, activa o elimina productos reales</p></div>
+    <form class="products-search" method="get" data-auto-search>
+      <i data-lucide="search"></i><input name="q" value="{{ q }}" autocomplete="off" placeholder="Buscar productos..." aria-label="Buscar productos">
+    </form>
+  </header>
+
+  <form method="post" class="card products-form-card" id="productForm">{% csrf_token %}
+    <div class="products-form-title">
+      <div><span class="products-form-icon"><i data-lucide="package-plus"></i></span><div><h2>{% if editing %}Editar producto{% else %}Nuevo producto{% endif %}</h2><p>{% if editing %}Actualiza la información almacenada en Supabase{% else %}Completa los datos para agregarlo al catálogo{% endif %}</p></div></div>
+      {% if editing %}<span class="product-editing-badge">Editando</span>{% endif %}
+    </div>
+    {% if form.non_field_errors %}<div class="form-alert">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="products-form-grid">
+      {% include 'panel/partials/field.html' with field=form.name label='Nombre' %}
+      {% include 'panel/partials/field.html' with field=form.price label='Precio' %}
+      {% include 'panel/partials/field.html' with field=form.stock label='Stock' %}
+      {% include 'panel/partials/field.html' with field=form.image_url label='URL o ruta de imagen' %}
+      {% include 'panel/partials/field.html' with field=form.colors_text label='Colores (separados por comas)' %}
+      {% include 'panel/partials/field.html' with field=form.sizes_text label='Tallas (separadas por comas)' %}
+      {% include 'panel/partials/field.html' with field=form.badge label='Etiqueta opcional' %}
+      <div class="form-group product-active-field"><label>Estado</label><label class="product-active-check">{{ form.is_active }}<span><strong>Producto activo</strong><small>Visible y disponible en el catálogo</small></span></label>{% for error in form.is_active.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>
+      {% include 'panel/partials/field.html' with field=form.description label='Descripción' full=True %}
+    </div>
+    <div class="products-form-actions">
+      <a class="btn btn-outline" href="{% url 'products' %}"><i data-lucide="rotate-ccw"></i> Limpiar</a>
+      <button class="btn btn-primary" type="submit"><i data-lucide="{% if editing %}save{% else %}package-plus{% endif %}"></i> {% if editing %}Guardar cambios{% else %}Crear producto{% endif %}</button>
+    </div>
+  </form>
+
+  <div class="products-list-heading"><div><h2>Catálogo de productos</h2><p>{{ products_count }} producto{{ products_count|pluralize }} encontrado{{ products_count|pluralize }}</p></div></div>
+  <section class="products-grid">
+    {% for product in products %}
+    <article class="card product-catalog-card">
+      <div class="product-catalog-media">
+        {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" data-image-fallback><span class="product-image-empty" hidden><i data-lucide="image-off"></i><small>La URL de imagen no está disponible</small></span>{% else %}<span class="product-image-empty"><i data-lucide="image"></i><small>Agrega una URL de imagen</small></span>{% endif %}
+        <span class="product-status-dot {% if product.is_active %}active{% else %}inactive{% endif %}">{{ product.is_active|yesno:'Activo,Inactivo' }}</span>
+        {% if product.badge %}<span class="product-badge">{{ product.badge }}</span>{% endif %}
+      </div>
+      <div class="product-catalog-body">
+        <div class="product-card-copy"><h3>{{ product.name }}</h3><p>{{ product.description|default:'Sin descripción registrada.'|truncatechars:145 }}</p></div>
+        <div class="product-variants">
+          {% if product.colors %}<span><i data-lucide="palette"></i>{{ product.colors|comma_join }}</span>{% endif %}
+          {% if product.sizes %}<span><i data-lucide="ruler"></i>{{ product.sizes|comma_join }}</span>{% endif %}
+        </div>
+        <div class="product-price-row"><div><strong>{{ product.price|money }}</strong><span>Stock: {{ product.stock }}</span></div><div class="product-card-actions"><a href="?edit={{ product.id }}#productForm" aria-label="Editar {{ product.name }}" title="Editar"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'product_delete' product.id %}">{% csrf_token %}<button type="submit" class="danger" aria-label="Eliminar {{ product.name }}" data-confirm="El producto se eliminará de la base de datos." data-confirm-title="¿Eliminar {{ product.name }}?"><i data-lucide="trash-2"></i></button></form></div></div>
+      </div>
+    </article>
+    {% empty %}
+    <article class="card products-empty"><i data-lucide="package-search"></i><h3>No encontramos productos</h3><p>{% if q %}Prueba con otro término de búsqueda.{% else %}Crea el primer producto usando el formulario superior.{% endif %}</p></article>
+    {% endfor %}
+  </section>
+</section>
+{% endblock %}

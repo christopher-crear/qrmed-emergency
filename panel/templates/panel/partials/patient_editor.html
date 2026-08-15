@@ -1,0 +1,107 @@
+{% load panel_extras %}
+<div class="patient-editor-v3">
+  <header class="patient-editor-v3__header">
+    <div class="patient-editor-v3__heading">
+      {% if editor_mode == 'admin' %}
+        <a class="patient-editor-v3__back" href="{% if is_create %}{% url 'patients' %}{% else %}{% url 'patient_detail' patient_record.id %}{% endif %}"><i data-lucide="arrow-left"></i><span>Volver</span></a>
+      {% else %}
+        <a class="patient-editor-v3__back" href="{% url 'patient_dashboard' %}"><i data-lucide="arrow-left"></i><span>Volver</span></a>
+      {% endif %}
+      <div>
+        <h1>{{ editor_title }}</h1>
+        <p>Paso {{ step }} de 3: {% if step == 1 %}Datos personales{% elif step == 2 %}Información médica{% else %}Contactos de emergencia{% endif %}</p>
+      </div>
+    </div>
+    <div class="patient-editor-v3__progress" aria-label="Paso {{ step }} de 3">
+      <span class="is-complete"></span><span class="{% if step >= 2 %}is-complete{% endif %}"></span><span class="{% if step >= 3 %}is-complete{% endif %}"></span>
+    </div>
+  </header>
+
+  <form method="post" enctype="multipart/form-data" class="patient-editor-v3__form" data-patient-editor-form>
+    {% csrf_token %}
+    <article class="patient-editor-v3__card">
+      {% if form.non_field_errors %}<div class="form-alert">{{ form.non_field_errors }}</div>{% endif %}
+
+      {% if step == 1 %}
+        <h2 class="patient-editor-v3__section-title is-personal"><i data-lucide="user-round"></i><span>Datos personales</span></h2>
+        <div class="patient-editor-v3__photo" data-patient-photo-picker tabindex="0" role="button" aria-label="Seleccionar fotografía del paciente">
+          <div class="patient-editor-v3__photo-preview">
+            {% if patient_record.photo_path %}
+              <img id="patientPhotoPreview" src="{% url 'patient_photo_image' patient_record.id %}" alt="Fotografía de {{ patient_record.full_name }}" data-avatar-fallback>
+              <span class="initials-avatar" hidden>{{ patient_record.full_name|initials }}</span>
+            {% else %}
+              <img id="patientPhotoPreview" hidden alt="Vista previa de la fotografía">
+              {% if patient_record.first_name %}<span class="initials-avatar">{{ patient_record.full_name|initials }}</span>{% else %}<span class="patient-editor-v3__camera"><i data-lucide="camera"></i></span>{% endif %}
+            {% endif %}
+          </div>
+          <div class="patient-editor-v3__photo-copy">
+            <strong>Fotografía del paciente{% if editor_mode == 'patient' %} <em>(opcional)</em>{% endif %}</strong>
+            <p>JPG, PNG o WebP hasta 5 MB</p>
+            <button type="button" class="patient-editor-v3__upload-button" data-patient-photo-button><i data-lucide="upload"></i>{% if patient_record.photo_path %}Cambiar foto{% else %}Subir foto{% endif %}</button>
+          </div>
+          <div class="patient-editor-v3__file-input">{{ form.photo }}</div>
+        </div>
+        {% for error in form.photo.errors %}<div class="photo-upload-error"><i data-lucide="circle-alert"></i>{{ error }}</div>{% endfor %}
+
+        <div class="patient-editor-v3__grid">
+          {% include 'panel/partials/field.html' with field=form.first_name label='Nombre(s)' %}
+          {% include 'panel/partials/field.html' with field=form.last_name label='Apellido(s)' %}
+          {% include 'panel/partials/field.html' with field=form.id_number label='Número de identificación' %}
+          {% include 'panel/partials/field.html' with field=form.birth_date label='Fecha de nacimiento' %}
+          {% include 'panel/partials/field.html' with field=form.sex label='Sexo' %}
+          {% include 'panel/partials/field.html' with field=form.phone label='Teléfono' %}
+          {% include 'panel/partials/field.html' with field=form.email label='Correo electrónico' full=True %}
+          {% include 'panel/partials/field.html' with field=form.address label='Dirección' full=True %}
+          {% include 'panel/partials/field.html' with field=form.city label='Ciudad' full=True %}
+          <div hidden>{{ form.status }}</div>
+        </div>
+      {% elif step == 2 %}
+        <h2 class="patient-editor-v3__section-title is-medical"><i data-lucide="heart"></i><span>Información médica</span></h2>
+        <div class="patient-editor-v3__grid patient-editor-v3__medical-grid">
+          {% include 'panel/partials/field.html' with field=form.blood_type label='Tipo de sangre' %}
+          {% include 'panel/partials/field.html' with field=form.insurance label='Seguro médico' %}
+          {% include 'panel/partials/field.html' with field=form.allergies label='Alergias' full=True help='Separa con comas' %}
+          {% include 'panel/partials/field.html' with field=form.diseases label='Enfermedades / condiciones' full=True help='Separa con comas' %}
+          {% include 'panel/partials/field.html' with field=form.medications label='Medicamentos actuales' full=True help='Separa con comas' %}
+          {% include 'panel/partials/field.html' with field=form.disabilities label='Discapacidades' full=True %}
+          {% include 'panel/partials/field.html' with field=form.history label='Antecedentes médicos' full=True %}
+          {% include 'panel/partials/field.html' with field=form.notes label='Observaciones adicionales' full=True %}
+        </div>
+      {% else %}
+        <h2 class="patient-editor-v3__section-title is-emergency"><i data-lucide="phone"></i><span>Contactos de emergencia</span></h2>
+        <section class="patient-editor-v3__contact">
+          <h3>Contacto 1 <b>*</b></h3>
+          <div class="patient-editor-v3__grid">
+            {% include 'panel/partials/field.html' with field=form.emergency_name label='Nombre completo *' %}
+            {% include 'panel/partials/field.html' with field=form.emergency_relationship label='Parentesco *' %}
+            {% include 'panel/partials/field.html' with field=form.emergency_phone label='Teléfono *' full=True %}
+          </div>
+        </section>
+        <section class="patient-editor-v3__contact">
+          <h3>Contacto 2 <span>(opcional)</span></h3>
+          <div class="patient-editor-v3__grid">
+            {% include 'panel/partials/field.html' with field=form.emergency2_name label='Nombre completo' %}
+            {% include 'panel/partials/field.html' with field=form.emergency2_relationship label='Parentesco' %}
+            {% include 'panel/partials/field.html' with field=form.emergency2_phone label='Teléfono' full=True %}
+          </div>
+        </section>
+      {% endif %}
+
+      {% if step == 3 %}
+        <div class="patient-editor-v3__actions is-inside">
+          {% if editor_mode == 'admin' %}<a class="btn btn-outline" href="{% url 'patient_edit' patient_record.id 2 %}">{% else %}<a class="btn btn-outline" href="{% url 'patient_medical_record' 2 %}">{% endif %}<i data-lucide="arrow-left"></i>Atrás</a>
+          <button class="btn btn-primary" type="submit"><i data-lucide="check"></i>Guardar cambios</button>
+        </div>
+      {% endif %}
+    </article>
+
+    {% if step < 3 %}
+      <div class="patient-editor-v3__actions {% if step == 1 %}is-first{% endif %}">
+        {% if step == 2 %}
+          {% if editor_mode == 'admin' %}<a class="btn btn-outline" href="{% url 'patient_edit' patient_record.id 1 %}">{% else %}<a class="btn btn-outline" href="{% url 'patient_medical_record' 1 %}">{% endif %}<i data-lucide="arrow-left"></i>Atrás</a>
+        {% endif %}
+        <button class="btn btn-primary" type="submit">Continuar<i data-lucide="arrow-right"></i></button>
+      </div>
+    {% endif %}
+  </form>
+</div>

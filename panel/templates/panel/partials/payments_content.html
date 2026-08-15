@@ -1,0 +1,28 @@
+{% load panel_extras %}
+<section class="payments-page">
+  <div class="payments-heading"><div><h1>Validación de Pagos</h1><p>Revisa y aprueba los comprobantes enviados por los pacientes</p></div><a class="btn btn-outline payments-export" href="{% url 'payments_export' %}"><i data-lucide="download"></i> Exportar reporte</a></div>
+  <section class="payments-stats">
+    <article class="payment-stat-card"><div><span>Pendientes de revisión</span><strong>{{ pending_count }}</strong><small>↗ Requieren acción</small></div><span class="payment-stat-icon orange"><i data-lucide="clock-3"></i></span></article>
+    <article class="payment-stat-card"><div><span>Pagos aprobados</span><strong>{{ approved_count }}</strong><small>↗ Confirmados</small></div><span class="payment-stat-icon green"><i data-lucide="badge-check"></i></span></article>
+    <article class="payment-stat-card"><div><span>Pagos rechazados</span><strong>{{ rejected_count }}</strong><small class="red-copy">↗ Revisados</small></div><span class="payment-stat-icon red"><i data-lucide="circle-x"></i></span></article>
+    <article class="payment-stat-card"><div><span>Total recibido</span><strong>{{ approved_total|money }}</strong><small>↗ Solo aprobados</small></div><span class="payment-stat-icon blue"><i data-lucide="trending-up"></i></span></article>
+  </section>
+  <div class="payments-toolbar">
+    <form class="payments-search" method="get" data-auto-search><i data-lucide="search"></i><input name="q" value="{{ q }}" autocomplete="off" placeholder="Buscar por paciente, pedido o cédula..." aria-label="Buscar pagos"><input type="hidden" name="status" value="{{ current_status }}"><input type="hidden" name="method" value="{{ current_method }}"></form>
+    <nav class="payment-filter-tabs" aria-label="Filtros de pagos">
+      <a href="?q={{ q|urlencode }}&status=all" class="{% if current_status == 'all' and not current_method %}active{% endif %}">Todos</a><a href="?q={{ q|urlencode }}&status=pending" class="{% if current_status == 'pending' and not current_method %}active{% endif %}">Pendientes</a><a href="?q={{ q|urlencode }}&status=approved" class="{% if current_status == 'approved' and not current_method %}active{% endif %}">Aprobados</a><a href="?q={{ q|urlencode }}&status=rejected" class="{% if current_status == 'rejected' and not current_method %}active{% endif %}">Rechazados</a><a href="?q={{ q|urlencode }}&status=all&method=transfer" class="{% if current_method == 'transfer' %}active{% endif %}">Transferencias</a><a href="?q={{ q|urlencode }}&status=all&method=deposit" class="{% if current_method == 'deposit' %}active{% endif %}">Depósitos</a>
+    </nav>
+  </div>
+  <article class="payments-table-card"><div class="payments-table-scroll"><table class="payments-table"><thead><tr><th>Comprobante</th><th>Pedido</th><th>Paciente</th><th>Método</th><th>Enviado</th><th>Valor</th><th>Estado</th><th>Acción</th></tr></thead><tbody>
+    {% for row in rows %}<tr>
+      <td><span class="payment-camera"><i data-lucide="camera"></i></span></td>
+      <td><strong>{{ row.order.order_number }}</strong><small>{{ row.product.name|default:'Producto no disponible' }}</small></td>
+      <td><div class="payment-user">{% if row.avatar_url %}<img class="payment-avatar payment-avatar-photo" src="{{ row.avatar_url }}" alt="Foto de {{ row.customer_name }}" loading="lazy" data-avatar-fallback><span class="payment-avatar avatar-placeholder" hidden><i data-lucide="user-round"></i></span>{% else %}<span class="payment-avatar avatar-placeholder"><i data-lucide="user-round"></i></span>{% endif %}<div><strong>{{ row.customer_name }}</strong><small>{{ row.customer_id }}</small></div></div></td>
+      <td><span class="payment-method {{ row.method_kind }}">{{ row.order.payment_method|payment_method_label }}</span></td>
+      <td class="payment-date">{{ row.order.created_at|date:'d M Y,' }}<br>{{ row.order.created_at|date:'h:i a' }}</td>
+      <td><strong class="payment-value">{{ row.order.total|money }}</strong></td>
+      <td><span class="payment-state {{ row.state }}"><i data-lucide="{% if row.state == 'approved' %}circle-check{% elif row.state == 'rejected' %}circle-x{% else %}clock-3{% endif %}"></i>{{ row.state|status_label }}</span></td>
+      <td><a class="payment-detail-button" href="{% url 'payment_detail' row.order.id %}?q={{ q|urlencode }}&status={{ current_status }}&method={{ current_method }}"><i data-lucide="eye"></i><span>Ver<br>detalle</span></a></td>
+    </tr>{% empty %}<tr><td colspan="8"><div class="payments-empty"><i data-lucide="receipt-text"></i><strong>No hay comprobantes</strong><span>Prueba con otro filtro o término de búsqueda.</span></div></td></tr>{% endfor %}
+  </tbody></table></div></article>
+</section>

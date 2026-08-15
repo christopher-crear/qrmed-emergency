@@ -1,0 +1,1047 @@
+import csv
+import io
+import json
+import uuid
+from collections import Counter
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+from urllib.parse import urlparse
+
+from django.conf import settings
+from django.contrib import messages
+from django.db import DatabaseError, IntegrityError, connection
+from django.db.models import Q, Sum
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.views.decorators.http import require_GET, require_POST
+
+from .decorators import admin_required, authenticated_required
+from .forms import (
+    BankAccountForm, OrderUpdateForm, PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm,
+    PaymentSettingForm, ProductForm, ProfileForm,
+)
+from .models import BankAccount, MedicalDocument, Order, OrderItem, Patient, PaymentSetting, Product, Profile
+from .services import (
+    SupabaseError, sign_in, storage_image_bytes, storage_image_signed_url, storage_signed_url,
+    update_password, upload_file, versioned_media_url,
+)
+
+
+def _profile_map(ids):
+    return {str(p.id): p for p in Profile.objects.filter(id__in=list(ids))}
+
+
+def _patient_map(owner_ids):
+    """Mapea tanto el owner de Auth como el UUID directo del paciente."""
+    result = {}
+    identifiers = list(owner_ids)
+    for patient in Patient.objects.filter(
+        Q(owner_id__in=identifiers) | Q(id__in=identifiers)
+    ).order_by("-created_at"):
+        result.setdefault(str(patient.owner_id), patient)
+        result.setdefault(str(patient.id), patient)
+    return result
+
+
+def _customer_avatar_url(patient=None, profile=None):
+    """Usa el avatar de la cuenta; la foto clínica queda como respaldo."""
+    if profile:
+        return reverse("profile_avatar_image", kwargs={"profile_id": profile.id})
+    if patient and patient.photo_path:
+        return reverse("patient_photo_image", kwargs={"patient_id": patient.id})
+    return ""
+
+
+def _decorate_bank_assets(bank):
+    bank.logo_url = (
+        reverse("bank_asset_image", kwargs={"bank_id": bank.id, "kind": "logo"})
+        if bank.logo_path else ""
+    )
+    bank.qr_url = (
+        reverse("bank_asset_image", kwargs={"bank_id": bank.id, "kind": "qr"})
+        if bank.qr_path else ""
+    )
+    return bank
+
+
+def _order_context(order):
+    items = list(OrderItem.objects.filter(order_id=order.id))
+    products = {str(p.id): p for p in Product.objects.filter(id__in=[x.product_id for x in items if x.product_id])}
+    patient = Patient.objects.filter(
+        Q(owner_id=order.user_id) | Q(id=order.user_id)
+    ).order_by("-created_at").first()
+    profile = Profile.objects.filter(id=order.user_id).first()
+    if not profile and patient:
+        profile = Profile.objects.filter(id=patient.owner_id).first()
+    first_item = items[0] if items else None
+    product = products.get(str(first_item.product_id)) if first_item and first_item.product_id else None
+    proof_url = storage_signed_url(order.payment_proof_path, settings.SUPABASE_PAYMENT_BUCKET)
+    proof_name = Path(urlparse(str(order.payment_proof_path or "")).path).name or "comprobante"
+    proof_is_pdf = proof_name.lower().endswith(".pdf")
+    return {
+        "order": order,
+        "items": items,
+        "products_map": products,
+        "customer": patient or profile,
+        "patient": patient,
+        "customer_profile": profile,
+        "first_item": first_item,
+        "product": product,
+        "proof_url": proof_url,
+        "proof_name": proof_name,
+        "proof_is_pdf": proof_is_pdf,
+        "customer_avatar_url": _customer_avatar_url(patient, profile),
+    }
+
+
+def _orders_context(request):
+    q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "all").strip().lower()
+    orders_list = list(Order.objects.all())
+    owner_ids = {order.user_id for order in orders_list}
+    patients = _patient_map(owner_ids)
+    profile_ids = owner_ids | {patient.owner_id for patient in patients.values() if patient.owner_id}
+    profiles = _profile_map(profile_ids)
+    items = list(OrderItem.objects.filter(order_id__in=[order.id for order in orders_list]))
+    item_map = {}
+    for item in items:
+        item_map.setdefault(str(item.order_id), []).append(item)
+    product_map = {
+        str(product.id): product
+        for product in Product.objects.filter(id__in=[item.product_id for item in items if item.product_id])
+    }
+
+    rows = []
+    for order in orders_list:
+        patient = patients.get(str(order.user_id))
+        profile = profiles.get(str(order.user_id))
+        if not profile and patient:
+            profile = profiles.get(str(patient.owner_id))
+        order_items = item_map.get(str(order.id), [])
+        first_item = order_items[0] if order_items else None
+        product = product_map.get(str(first_item.product_id)) if first_item and first_item.product_id else None
+        customer_name = patient.full_name if patient else (profile.full_name if profile else "Usuario sin perfil")
+        customer_id = patient.id_number if patient else (profile.phone if profile else "")
+        normalized_status = str(order.status or "pending").lower()
+        if status != "all" and normalized_status != status:
+            continue
+        haystack = " ".join(filter(None, [order.order_number, customer_name, customer_id, product.name if product else ""]))
+        if len(q) >= 2 and q.lower() not in haystack.lower():
+            continue
+        rows.append({
+            "order": order,
+            "patient": patient,
+            "profile": profile,
+            "customer_name": customer_name,
+            "customer_id": customer_id,
+            "items": order_items,
+            "first_item": first_item,
+            "product": product,
+        })
+    return {
+        "rows": rows,
+        "orders_total": len(orders_list),
+        "q": q,
+        "current_status": status,
+    }
+
+
+def _payment_state(order):
+    if order.payment_rejection_reason:
+        return "rejected"
+    if order.payment_reviewed_at:
+        return "approved"
+    return "pending"
+
+
+def _method_kind(value):
+    normalized = str(value or "").strip().lower()
+    if normalized in {"transfer", "transferencia", "bank_transfer", "transferencia_bancaria"}:
+        return "transfer"
+    if normalized in {"deposit", "deposito", "depósito", "bank_deposit"}:
+        return "deposit"
+    return normalized or "other"
+
+
+def _payments_context(request):
+    q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "all").strip().lower()
+    method = request.GET.get("method", "").strip().lower()
+    orders_list = list(
+        Order.objects.exclude(payment_proof_path__isnull=True).exclude(payment_proof_path="")
+    )
+    owner_ids = {order.user_id for order in orders_list}
+    patients = _patient_map(owner_ids)
+    profile_ids = owner_ids | {patient.owner_id for patient in patients.values() if patient.owner_id}
+    profiles = _profile_map(profile_ids)
+    items = list(OrderItem.objects.filter(order_id__in=[order.id for order in orders_list]))
+    item_map = {}
+    for item in items:
+        item_map.setdefault(str(item.order_id), []).append(item)
+    products = {
+        str(product.id): product
+        for product in Product.objects.filter(id__in=[item.product_id for item in items if item.product_id])
+    }
+
+    rows = []
+    for order in orders_list:
+        state = _payment_state(order)
+        patient = patients.get(str(order.user_id))
+        profile = profiles.get(str(order.user_id))
+        if not profile and patient:
+            profile = profiles.get(str(patient.owner_id))
+        order_items = item_map.get(str(order.id), [])
+        first_item = order_items[0] if order_items else None
+        product = products.get(str(first_item.product_id)) if first_item and first_item.product_id else None
+        customer_name = patient.full_name if patient else (profile.full_name if profile else "Usuario sin perfil")
+        customer_id = patient.id_number if patient else "Sin identificación"
+        customer_phone = patient.phone if patient else (profile.phone if profile else "")
+        customer_email = patient.email if patient else ""
+        if status != "all" and state != status:
+            continue
+        if method and _method_kind(order.payment_method) != method:
+            continue
+        haystack = " ".join(
+            filter(None, [order.order_number, customer_name, customer_id, customer_phone, customer_email])
+        ).lower()
+        if len(q) >= 2 and q.lower() not in haystack:
+            continue
+        rows.append({
+            "order": order,
+            "patient": patient,
+            "profile": profile,
+            "customer_name": customer_name,
+            "customer_id": customer_id,
+            "first_item": first_item,
+            "product": product,
+            "state": state,
+            "method_kind": _method_kind(order.payment_method),
+            "avatar_url": _customer_avatar_url(patient, profile),
+        })
+
+    approved_total = sum(
+        (order.total or Decimal("0")) for order in orders_list if _payment_state(order) == "approved"
+    )
+    return {
+        "rows": rows,
+        "q": q,
+        "current_status": status,
+        "current_method": method,
+        "pending_count": sum(_payment_state(order) == "pending" for order in orders_list),
+        "approved_count": sum(_payment_state(order) == "approved" for order in orders_list),
+        "rejected_count": sum(_payment_state(order) == "rejected" for order in orders_list),
+        "approved_total": approved_total,
+    }
+
+
+def _month_labels_and_counts(objects, months=6):
+    today = timezone.localdate()
+    points = []
+    year, month = today.year, today.month
+    for offset in reversed(range(months)):
+        m = month - offset
+        y = year
+        while m <= 0:
+            m += 12
+            y -= 1
+        points.append((y, m))
+    counter = Counter((obj.created_at.year, obj.created_at.month) for obj in objects if obj.created_at)
+    labels_es = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+    return [labels_es[m - 1] for y, m in points], [counter[(y, m)] for y, m in points]
+
+
+def login_view(request):
+    if request.session.get("supabase_user_id"):
+        profile_obj = Profile.objects.filter(id=request.session["supabase_user_id"]).first()
+        if profile_obj and (profile_obj.role or "").lower() in {"admin", "administrador"}:
+            return redirect("dashboard")
+        if profile_obj:
+            return redirect("patient_dashboard")
+        request.session.flush()
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip()
+        password = request.POST.get("password", "")
+        try:
+            result = sign_in(email, password)
+            user = result["user"]
+            profile_obj = Profile.objects.filter(id=user["id"]).first()
+            if not profile_obj or not profile_obj.is_active:
+                raise SupabaseError("Esta cuenta no tiene un perfil activo.")
+            role = (profile_obj.role or "").lower()
+            if role not in {"admin", "administrador", "user", "usuario", "patient", "paciente"}:
+                raise SupabaseError("El rol de esta cuenta no está habilitado.")
+            request.session.cycle_key()
+            request.session["supabase_user_id"] = user["id"]
+            request.session["supabase_email"] = user.get("email", email)
+            request.session["supabase_access_token"] = result.get("access_token", "")
+            request.session["supabase_refresh_token"] = result.get("refresh_token", "")
+            request.session["account_role"] = role
+            if request.POST.get("remember") != "on":
+                request.session.set_expiry(0)
+            return redirect("dashboard" if role in {"admin", "administrador"} else "patient_dashboard")
+        except SupabaseError as exc:
+            messages.error(request, str(exc))
+    return render(request, "panel/login.html")
+
+
+def logout_view(request):
+    request.session.flush()
+    return redirect("login")
+
+
+@require_GET
+def health(request):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        return JsonResponse({"status": "ok"})
+    except Exception:
+        return JsonResponse({"status": "database_error"}, status=503)
+
+
+def patient_photo_image(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    access_token = request.session.get("supabase_access_token", "")
+    signed_url = storage_image_signed_url(
+        settings.SUPABASE_PATIENT_BUCKET,
+        patient.photo_path,
+        identifiers=(patient.id, patient.owner_id),
+        access_token=access_token,
+    )
+    if signed_url:
+        response = HttpResponseRedirect(signed_url)
+        response["Cache-Control"] = "private, no-store, max-age=0"
+        return response
+    image = storage_image_bytes(
+        settings.SUPABASE_PATIENT_BUCKET,
+        patient.photo_path,
+        identifiers=(patient.id, patient.owner_id),
+        access_token=access_token,
+    )
+    if not image:
+        return HttpResponse(status=404)
+    content, content_type = image
+    response = HttpResponse(content, content_type=content_type)
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    return response
+
+
+@authenticated_required
+def bank_asset_image(request, bank_id, kind):
+    if kind not in {"logo", "qr"}:
+        return HttpResponse(status=404)
+    try:
+        bank = BankAccount.objects.get(id=bank_id)
+    except (BankAccount.DoesNotExist, DatabaseError, ValueError):
+        return HttpResponse(status=404)
+    role = (getattr(request, "account_profile", None).role or "").lower() if getattr(request, "account_profile", None) else ""
+    if not bank.is_visible and role not in {"admin", "administrador"}:
+        return HttpResponse(status=404)
+    stored_path = bank.logo_path if kind == "logo" else bank.qr_path
+    if not stored_path:
+        return HttpResponse(status=404)
+    access_token = request.session.get("supabase_access_token", "")
+    signed_url = storage_image_signed_url(
+        settings.SUPABASE_BANK_BUCKET,
+        stored_path,
+        identifiers=(bank.id,),
+        keywords=(kind,),
+        access_token=access_token,
+    )
+    if signed_url:
+        response = HttpResponseRedirect(signed_url)
+        response["Cache-Control"] = "private, no-store, max-age=0"
+        return response
+    image = storage_image_bytes(
+        settings.SUPABASE_BANK_BUCKET,
+        stored_path,
+        identifiers=(bank.id,),
+        keywords=(kind,),
+        access_token=access_token,
+    )
+    if not image:
+        return HttpResponse(status=404)
+    content, content_type = image
+    response = HttpResponse(content, content_type=content_type)
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    return response
+
+
+@authenticated_required
+def profile_avatar_image(request, profile_id):
+    role = (request.account_profile.role or "").lower()
+    if role not in {"admin", "administrador"} and request.account_profile.id != profile_id:
+        return HttpResponse(status=404)
+    profile_obj = get_object_or_404(Profile, id=profile_id)
+    access_token = request.session.get("supabase_access_token", "")
+    signed_url = storage_image_signed_url(
+        settings.SUPABASE_PROFILE_BUCKET,
+        profile_obj.avatar_path,
+        identifiers=(profile_obj.id,),
+        keywords=("avatar",),
+        access_token=access_token,
+    )
+    if signed_url:
+        response = HttpResponseRedirect(signed_url)
+        response["Cache-Control"] = "private, no-store, max-age=0"
+        return response
+    image = storage_image_bytes(
+        settings.SUPABASE_PROFILE_BUCKET,
+        profile_obj.avatar_path,
+        identifiers=(profile_obj.id,),
+        keywords=("avatar",),
+        access_token=access_token,
+    )
+    if not image:
+        return HttpResponse(status=404)
+    content, content_type = image
+    response = HttpResponse(content, content_type=content_type)
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    return response
+
+
+@authenticated_required
+def profile_cover_image(request, profile_id):
+    role = (request.account_profile.role or "").lower()
+    if role not in {"admin", "administrador"} and request.account_profile.id != profile_id:
+        return HttpResponse(status=404)
+    profile_obj = get_object_or_404(Profile, id=profile_id)
+    access_token = request.session.get("supabase_access_token", "")
+    signed_url = storage_image_signed_url(
+        settings.SUPABASE_PROFILE_BUCKET,
+        profile_obj.cover_path,
+        identifiers=(profile_obj.id,),
+        keywords=("cover", "portada"),
+        access_token=access_token,
+    )
+    if signed_url:
+        response = HttpResponseRedirect(signed_url)
+        response["Cache-Control"] = "private, no-store, max-age=0"
+        return response
+    image = storage_image_bytes(
+        settings.SUPABASE_PROFILE_BUCKET,
+        profile_obj.cover_path,
+        identifiers=(profile_obj.id,),
+        keywords=("cover", "portada"),
+        access_token=access_token,
+    )
+    if not image:
+        return HttpResponse(status=404)
+    content, content_type = image
+    response = HttpResponse(content, content_type=content_type)
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    return response
+
+
+@admin_required
+def dashboard(request):
+    patients_qs = Patient.objects.all()
+    orders_qs = Order.objects.all()
+    patients_list = list(patients_qs)
+    orders_list = list(orders_qs)
+    active = sum(1 for p in patients_list if str(p.status).lower() == "active")
+    labels, patient_counts = _month_labels_and_counts(patients_list)
+    _, order_counts = _month_labels_and_counts(orders_list)
+    recent_orders = orders_list[:4]
+    recent_patients = patients_list[:5]
+    context = {
+        "patient_count": len(patients_list), "qr_count": len(patients_list), "order_count": len(orders_list),
+        "activation_rate": round(active / len(patients_list) * 100) if patients_list else 0,
+        "active_count": active, "recent_patients": recent_patients, "recent_orders": recent_orders,
+        "chart_labels": json.dumps(labels), "patient_chart": json.dumps(patient_counts), "order_chart": json.dumps(order_counts),
+    }
+    return render(request, "panel/dashboard.html", context)
+
+
+@admin_required
+def global_search(request):
+    q = request.GET.get("q", "").strip()
+    results = []
+    if len(q) >= 2:
+        for p in Patient.objects.filter(Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(id_number__icontains=q))[:6]:
+            results.append({"title": p.full_name, "subtitle": f"Paciente · {p.id_number}", "url": f"/pacientes/{p.id}/"})
+        for o in Order.objects.filter(order_number__icontains=q)[:5]:
+            results.append({"title": o.order_number, "subtitle": "Pedido", "url": f"/pedidos/{o.id}/"})
+        for p in Product.objects.filter(name__icontains=q)[:5]:
+            results.append({"title": p.name, "subtitle": "Producto", "url": f"/productos/?q={p.name}"})
+    return JsonResponse({"results": results})
+
+
+@admin_required
+def patients(request):
+    q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "all").strip().lower()
+    qs = Patient.objects.all()
+    if len(q) >= 2:
+        qs = qs.filter(Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(id_number__icontains=q) | Q(email__icontains=q) | Q(city__icontains=q))
+    if status in {"active", "inactive"}:
+        qs = qs.filter(status=status)
+    patient_rows = list(qs)
+    profiles = _profile_map({patient.owner_id for patient in patient_rows if patient.owner_id})
+    for patient in patient_rows:
+        profile = profiles.get(str(patient.owner_id))
+        patient.account_avatar_url = (
+            reverse("profile_avatar_image", kwargs={"profile_id": profile.id})
+            if profile else ""
+        )
+    return render(request, "panel/patients.html", {
+        "patients": patient_rows,
+        "q": q,
+        "current_status": status,
+        "total_patients": Patient.objects.count(),
+    })
+
+
+@admin_required
+def patient_create(request):
+    patient = Patient(id=uuid.uuid4(), owner_id=request.admin_profile.id, qr_token=uuid.uuid4(), status="active")
+    form = PatientPersonalForm(request.POST or None, request.FILES or None, instance=patient)
+    if request.method == "POST" and form.is_valid():
+        patient = form.save(commit=False)
+        patient.owner_id = request.admin_profile.id
+        patient.created_at = timezone.now()
+        patient.updated_at = timezone.now()
+        if request.FILES.get("photo"):
+            try:
+                patient.photo_path = upload_file(
+                    request.FILES["photo"], settings.SUPABASE_PATIENT_BUCKET,
+                    f"{patient.owner_id}/{patient.id}", "photo-",
+                    request.session.get("supabase_access_token", ""),
+                )
+            except SupabaseError as exc:
+                messages.error(request, str(exc))
+                return render(request, "panel/patient_edit.html", {"patient": patient, "form": form, "step": 1, "is_create": True})
+        try:
+            patient.save(force_insert=True)
+        except IntegrityError as exc:
+            if "patients_sex_check" not in str(exc):
+                raise
+            form.add_error(
+                "sex" if "sex" in form.fields else None,
+                "Selecciona nuevamente el sexo del paciente.",
+            )
+            return render(request, "panel/patient_edit.html", {
+                "patient": patient, "form": form, "step": 1, "is_create": True,
+            })
+        messages.success(request, "Datos personales guardados. Completa la información médica.")
+        return redirect("patient_edit", patient_id=patient.id, step=2)
+    return render(request, "panel/patient_edit.html", {"patient": patient, "form": form, "step": 1, "is_create": True})
+
+
+@admin_required
+def patients_export(request):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="pacientes_qrmed.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow(["Paciente", "Identificación", "Correo", "Teléfono", "Sangre", "Ciudad", "Estado"])
+    for patient in Patient.objects.all():
+        writer.writerow([patient.full_name, patient.id_number, patient.email, patient.phone, patient.blood_type, patient.city, patient.status])
+    return response
+
+
+@admin_required
+def patient_detail(request, patient_id):
+    return render(request, "panel/patient_detail.html", {"patient": get_object_or_404(Patient, id=patient_id)})
+
+
+@admin_required
+def patient_qr_image(request, patient_id):
+    import qrcode
+
+    patient = get_object_or_404(Patient, id=patient_id)
+    public_url = request.build_absolute_uri(reverse("public_patient", kwargs={"token": patient.qr_token}))
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
+    qr.add_data(public_url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="#183b62", back_color="white")
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    response = HttpResponse(output.getvalue(), content_type="image/png")
+    response["Cache-Control"] = "private, max-age=300"
+    return response
+
+
+@admin_required
+@require_POST
+def patient_delete(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    MedicalDocument.objects.filter(patient_id=patient.id).delete()
+    patient.delete()
+    messages.success(request, "Paciente eliminado correctamente.")
+    return redirect("patients")
+
+
+def public_patient(request, token):
+    patient = get_object_or_404(Patient, qr_token=token)
+    return render(request, "panel/public_patient.html", {"patient": patient})
+
+
+@admin_required
+def patient_edit(request, patient_id, step):
+    patient = get_object_or_404(Patient, id=patient_id)
+    form_classes = {1: PatientPersonalForm, 2: PatientMedicalForm, 3: PatientEmergencyForm}
+    if step not in form_classes:
+        return redirect("patient_edit", patient_id=patient.id, step=1)
+    form = form_classes[step](request.POST or None, request.FILES or None, instance=patient)
+    if request.method == "POST" and form.is_valid():
+        patient = form.save(commit=False)
+        if step == 1 and request.FILES.get("photo"):
+            try:
+                patient.photo_path = upload_file(
+                    request.FILES["photo"], settings.SUPABASE_PATIENT_BUCKET,
+                    f"{patient.owner_id}/{patient.id}", "photo-",
+                    request.session.get("supabase_access_token", ""),
+                )
+            except SupabaseError as exc:
+                messages.error(request, str(exc))
+                return render(request, "panel/patient_edit.html", {"patient": patient, "form": form, "step": step, "is_create": False})
+        patient.updated_at = timezone.now()
+        try:
+            patient.save()
+        except IntegrityError as exc:
+            if "patients_sex_check" not in str(exc):
+                raise
+            form.add_error(
+                "sex" if "sex" in form.fields else None,
+                "Selecciona nuevamente el sexo del paciente.",
+            )
+            return render(request, "panel/patient_edit.html", {
+                "patient": patient, "form": form, "step": step, "is_create": False,
+            })
+        if step < 3:
+            return redirect("patient_edit", patient_id=patient.id, step=step + 1)
+        messages.success(request, "Paciente actualizado correctamente.")
+        return redirect("patient_detail", patient_id=patient.id)
+    return render(request, "panel/patient_edit.html", {"patient": patient, "form": form, "step": step, "is_create": False})
+
+
+@admin_required
+def payments(request):
+    return render(request, "panel/payments.html", _payments_context(request))
+
+
+@admin_required
+def payment_detail(request, order_id):
+    order = get_object_or_404(Order, id=order_id)
+    context = _payments_context(request)
+    context.update(_order_context(order))
+    context["payment_state"] = _payment_state(order)
+    return render(request, "panel/payment_detail.html", context)
+
+
+@admin_required
+@require_POST
+def payment_review(request, order_id, action):
+    order = get_object_or_404(Order, id=order_id)
+    if action == "approve":
+        order.payment_rejection_reason = None
+        order.payment_reviewed_at = timezone.now()
+        order.payment_reviewed_by = request.admin_profile.id
+        if order.status in {"pending", "confirmed"}:
+            existing_statuses = set(Order.objects.values_list("status", flat=True))
+            order.status = "in_production" if "in_production" in existing_statuses else "production"
+        messages.success(request, "Pago aprobado correctamente.")
+    elif action == "reject":
+        reason = request.POST.get("reason", "Comprobante no válido").strip()
+        order.payment_rejection_reason = reason
+        order.payment_reviewed_at = timezone.now()
+        order.payment_reviewed_by = request.admin_profile.id
+        messages.success(request, "Pago rechazado y marcado para revisión del cliente.")
+    else:
+        messages.error(request, "Acción de pago no válida.")
+        return redirect("payments")
+    order.updated_at = timezone.now()
+    order.save()
+    return redirect("payments")
+
+
+@admin_required
+def payments_export(request):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="pagos_qrmed.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow(["Pedido", "Método", "Total", "Estado", "Fecha"])
+    for order in Order.objects.exclude(payment_proof_path__isnull=True):
+        writer.writerow([order.order_number, order.payment_method, order.total, _payment_state(order), order.created_at])
+    return response
+
+
+@admin_required
+def products(request):
+    editing = Product.objects.filter(id=request.GET.get("edit")).first() if request.GET.get("edit") else None
+    form = ProductForm(request.POST or None, instance=editing)
+    if request.method == "POST" and form.is_valid():
+        product = form.save(commit=False)
+        now = timezone.now()
+        product.updated_at = now
+        if not product.created_at:
+            product.created_at = now
+        product.save()
+        messages.success(request, "Producto guardado correctamente.")
+        return redirect("products")
+    q = request.GET.get("q", "").strip()
+    qs = Product.objects.all()
+    if len(q) >= 2:
+        qs = qs.filter(name__icontains=q)
+    return render(request, "panel/products.html", {
+        "products": qs,
+        "products_count": qs.count(),
+        "form": form,
+        "editing": editing,
+        "q": q,
+    })
+
+
+@admin_required
+@require_POST
+def product_edit(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+    form = ProductForm(request.POST, instance=product)
+    if form.is_valid():
+        item = form.save(commit=False)
+        item.updated_at = timezone.now()
+        item.save()
+        messages.success(request, "Producto actualizado.")
+    else:
+        messages.error(request, "Revisa los datos del producto.")
+    return redirect("products")
+
+
+@admin_required
+@require_POST
+def product_delete(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+    product.delete()
+    messages.success(request, "Producto eliminado.")
+    return redirect("products")
+
+
+@admin_required
+def orders(request):
+    return render(request, "panel/orders.html", _orders_context(request))
+
+
+@admin_required
+def order_detail(request, order_id):
+    context = _order_context(get_object_or_404(Order, id=order_id))
+    context["form"] = OrderUpdateForm(instance=context["order"])
+    context.update({f"list_{key}": value for key, value in _orders_context(request).items()})
+    return render(request, "panel/order_detail.html", context)
+
+
+@admin_required
+@require_POST
+def order_update(request, order_id):
+    order = get_object_or_404(Order, id=order_id)
+    form = OrderUpdateForm(request.POST, instance=order)
+    if form.is_valid():
+        item = form.save(commit=False)
+        item.updated_at = timezone.now()
+        item.save()
+        messages.success(request, "Pedido actualizado correctamente.")
+    else:
+        messages.error(request, "No se pudo actualizar el pedido.")
+    return redirect("order_detail", order_id=order.id)
+
+
+@admin_required
+@require_POST
+def order_delete(request, order_id):
+    order = get_object_or_404(Order, id=order_id)
+    OrderItem.objects.filter(order_id=order.id).delete()
+    order.delete()
+    messages.success(request, "Pedido eliminado.")
+    return redirect("orders")
+
+
+@admin_required
+def users(request):
+    q = request.GET.get("q", "").strip()
+    all_profiles = Profile.objects.all().order_by("-created_at")
+    qs = all_profiles
+    if len(q) >= 2:
+        qs = qs.filter(Q(full_name__icontains=q) | Q(phone__icontains=q))
+    roles = [str(role or "").lower() for role in all_profiles.values_list("role", flat=True)]
+    return render(request, "panel/users.html", {
+        "profiles": qs,
+        "q": q,
+        "users_total": all_profiles.count(),
+        "admins_total": sum(role in {"admin", "administrador"} for role in roles),
+        "active_total": all_profiles.filter(is_active=True).count(),
+        "blocked_total": all_profiles.filter(is_active=False).count(),
+    })
+
+
+@admin_required
+@require_POST
+def user_role(request, user_id):
+    target = get_object_or_404(Profile, id=user_id)
+    role = request.POST.get("role", "user").lower()
+    if role not in {"user", "admin"}:
+        messages.error(request, "Rol no válido.")
+    elif target.id == request.admin_profile.id and role == "user":
+        messages.error(request, "No puedes quitarte tu propio rol de administrador.")
+    else:
+        # Algunos proyectos antiguos usan valores en español y otros usan
+        # los enum habituales de Supabase: user/admin. Conservamos el estilo
+        # que ya existe en la base para no romper el tipo user_role.
+        current_roles = set(Profile.objects.exclude(role__isnull=True).values_list("role", flat=True))
+        uses_spanish_enum = bool(current_roles & {"usuario", "administrador"})
+        target.role = ("administrador" if role == "admin" else "usuario") if uses_spanish_enum else role
+        target.updated_at = timezone.now()
+        target.save()
+        messages.success(request, "Rol actualizado.")
+    return redirect("users")
+
+
+@admin_required
+@require_POST
+def user_status(request, user_id):
+    target = get_object_or_404(Profile, id=user_id)
+    if target.id == request.admin_profile.id:
+        messages.error(request, "No puedes bloquear tu propia cuenta.")
+    else:
+        target.is_active = not target.is_active
+        target.updated_at = timezone.now()
+        target.save()
+        messages.success(request, "Estado de usuario actualizado.")
+    return redirect("users")
+
+
+@admin_required
+def profile(request):
+    patient_count = Patient.objects.count()
+    profile_obj = request.admin_profile
+    return render(request, "panel/profile.html", {
+        "profile_form": ProfileForm(instance=profile_obj),
+        "patient_count": patient_count, "order_count": Order.objects.count(),
+        "profile_cover_url": versioned_media_url(
+            reverse("profile_cover_image", kwargs={"profile_id": profile_obj.id}),
+            profile_obj.updated_at,
+        ) if profile_obj.cover_path else "",
+        "profile_avatar_url": versioned_media_url(
+            reverse("profile_avatar_image", kwargs={"profile_id": profile_obj.id}),
+            profile_obj.updated_at,
+        ) if profile_obj.avatar_path else "",
+        "profile_display_name": profile_obj.full_name or "Administrador",
+        "profile_email": request.session.get("supabase_email", ""),
+        "profile_phone": profile_obj.phone or "",
+        "profile_city": profile_obj.city or "",
+        "profile_specialty": profile_obj.specialty or "Administración",
+        "profile_specialty_label": "Especialidad",
+        "profile_role_label": "Administrador",
+        "profile_role_icon": "shield-check",
+        "profile_edit_action": reverse("profile_edit"),
+        "profile_password_action": reverse("password_update"),
+        "profile_metric_primary_label": "Pacientes registrados",
+        "profile_metric_primary": patient_count,
+        "profile_metric_qr_label": "QR generados",
+        "profile_metric_qr": patient_count,
+        "profile_metric_orders": Order.objects.count(),
+        "profile_member_since": profile_obj.created_at,
+        "profile_danger_text": "La eliminación de una cuenta es irreversible y requiere gestión directa en Supabase Auth.",
+    })
+
+
+@admin_required
+@require_POST
+def profile_edit(request):
+    form = ProfileForm(request.POST, request.FILES, instance=request.admin_profile)
+    if form.is_valid():
+        profile_obj = form.save(commit=False)
+        try:
+            if request.FILES.get("avatar"):
+                profile_obj.avatar_path = upload_file(
+                    request.FILES["avatar"], settings.SUPABASE_PROFILE_BUCKET,
+                    str(profile_obj.id), "avatar-",
+                    request.session.get("supabase_access_token", ""),
+                )
+            if request.FILES.get("cover"):
+                profile_obj.cover_path = upload_file(
+                    request.FILES["cover"], settings.SUPABASE_PROFILE_BUCKET,
+                    str(profile_obj.id), "cover-",
+                    request.session.get("supabase_access_token", ""),
+                )
+        except SupabaseError as exc:
+            messages.error(request, str(exc))
+            return redirect("profile")
+        profile_obj.updated_at = timezone.now()
+        update_fields = list(form._meta.fields) + ["updated_at"]
+        if request.FILES.get("avatar"):
+            update_fields.append("avatar_path")
+        if request.FILES.get("cover"):
+            update_fields.append("cover_path")
+        profile_obj.save(update_fields=list(dict.fromkeys(update_fields)))
+        messages.success(request, "Perfil actualizado correctamente.")
+    else:
+        messages.error(request, "Revisa la información del perfil.")
+    return redirect("profile")
+
+
+@admin_required
+@require_POST
+def password_update(request):
+    current_password = request.POST.get("current_password", "")
+    new_password = request.POST.get("new_password", "")
+    confirm = request.POST.get("confirm_password", "")
+    if not current_password:
+        messages.error(request, "Ingresa tu contraseña actual.")
+    elif len(new_password) < 8:
+        messages.error(request, "La nueva contraseña debe tener al menos 8 caracteres.")
+    elif new_password != confirm:
+        messages.error(request, "Las contraseñas no coinciden.")
+    else:
+        try:
+            auth_result = sign_in(request.session.get("supabase_email", ""), current_password)
+            update_password(auth_result.get("access_token", ""), new_password)
+            request.session["supabase_access_token"] = auth_result.get("access_token", "")
+            request.session["supabase_refresh_token"] = auth_result.get("refresh_token", "")
+            messages.success(request, "Contraseña actualizada.")
+        except SupabaseError as exc:
+            messages.error(request, str(exc))
+    return redirect("profile")
+
+
+@admin_required
+def banks(request):
+    """Administra múltiples cuentas bancarias publicadas para el checkout."""
+    schema_ready = True
+    editing_bank = None
+    bank_rows = []
+    requested_id = request.POST.get("bank_id") if request.method == "POST" else request.GET.get("edit")
+
+    try:
+        if requested_id:
+            editing_bank = BankAccount.objects.filter(id=requested_id).first()
+        bank_rows = list(BankAccount.objects.all().order_by("display_order", "bank_name"))
+    except (DatabaseError, ValueError):
+        schema_ready = False
+        editing_bank = None
+        bank_rows = []
+
+    instance = editing_bank or BankAccount(id=uuid.uuid4(), is_visible=True, display_order=0)
+    form = BankAccountForm(request.POST or None, request.FILES or None, instance=instance)
+
+    if request.method == "POST":
+        if not schema_ready:
+            messages.error(request, "Primero ejecuta el archivo supabase_bancos.sql en Supabase.")
+        elif form.is_valid():
+            bank = form.save(commit=False)
+            is_new = editing_bank is None
+            if is_new:
+                bank.id = instance.id or uuid.uuid4()
+                bank.created_by = request.admin_profile.id
+                bank.created_at = timezone.now()
+            bank.updated_at = timezone.now()
+            bank.logo_path = editing_bank.logo_path if editing_bank else ""
+            bank.qr_path = editing_bank.qr_path if editing_bank else ""
+            access_token = request.session.get("supabase_access_token", "")
+            try:
+                if request.FILES.get("logo"):
+                    bank.logo_path = upload_file(
+                        request.FILES["logo"],
+                        settings.SUPABASE_BANK_BUCKET,
+                        f"banks/{bank.id}",
+                        "logo-",
+                        access_token,
+                    )
+                if request.FILES.get("qr_image"):
+                    bank.qr_path = upload_file(
+                        request.FILES["qr_image"],
+                        settings.SUPABASE_BANK_BUCKET,
+                        f"banks/{bank.id}",
+                        "qr-",
+                        access_token,
+                    )
+            except SupabaseError as exc:
+                messages.error(request, str(exc))
+            else:
+                try:
+                    bank.save(force_insert=is_new)
+                except DatabaseError:
+                    messages.error(request, "No se pudo guardar el banco. Verifica que supabase_bancos.sql se haya ejecutado completo.")
+                else:
+                    messages.success(request, "Banco guardado correctamente." if is_new else "Datos bancarios actualizados.")
+                    return redirect("banks")
+        else:
+            messages.error(request, "Revisa los campos marcados antes de guardar.")
+
+    for bank in bank_rows:
+        _decorate_bank_assets(bank)
+    if editing_bank:
+        _decorate_bank_assets(editing_bank)
+
+    return render(request, "panel/banks.html", {
+        "form": form,
+        "banks": bank_rows,
+        "editing_bank": editing_bank,
+        "schema_ready": schema_ready,
+        "visible_count": sum(bool(bank.is_visible) for bank in bank_rows),
+    })
+
+
+@admin_required
+@require_POST
+def bank_toggle_visibility(request, bank_id):
+    try:
+        bank = BankAccount.objects.get(id=bank_id)
+        bank.is_visible = not bank.is_visible
+        bank.updated_at = timezone.now()
+        bank.save(update_fields=["is_visible", "updated_at"])
+    except BankAccount.DoesNotExist:
+        messages.error(request, "La cuenta bancaria ya no existe.")
+    except DatabaseError:
+        messages.error(request, "No se pudo actualizar la cuenta. Verifica el esquema de Supabase.")
+    else:
+        messages.success(request, "Cuenta publicada para pacientes." if bank.is_visible else "Cuenta ocultada para pacientes.")
+    return redirect("banks")
+
+
+@admin_required
+def configuration(request):
+    payment_setting = PaymentSetting.objects.first() or PaymentSetting(id=True)
+    payment_form = PaymentSettingForm(instance=payment_setting)
+    preferences = request.admin_profile.preferences or {}
+    if request.method == "POST":
+        section = request.POST.get("section")
+        if section == "preferences":
+            boolean_keys = ["order_updates", "qr_activity", "email_news", "system_alerts", "public_profile", "analytics"]
+            preferences = {"language": request.POST.get("language", "es"), "theme": request.POST.get("theme", "light")}
+            preferences.update({key: request.POST.get(key) == "on" for key in boolean_keys})
+            request.admin_profile.preferences = preferences
+            request.admin_profile.updated_at = timezone.now()
+            request.admin_profile.save()
+            messages.success(request, "Configuración guardada.")
+        elif section == "payments":
+            payment_form = PaymentSettingForm(request.POST, instance=payment_setting)
+            if payment_form.is_valid():
+                obj = payment_form.save(commit=False)
+                obj.id = True
+                obj.updated_at = timezone.now()
+                obj.save()
+                messages.success(request, "Datos bancarios actualizados.")
+            else:
+                messages.error(request, "Revisa los datos bancarios.")
+                return render(request, "panel/configuration.html", {
+                    "preferences": preferences,
+                    "payment_form": payment_form,
+                    "profile_bucket": settings.SUPABASE_PROFILE_BUCKET,
+                    "patient_bucket": settings.SUPABASE_PATIENT_BUCKET,
+                    "payment_bucket": settings.SUPABASE_PAYMENT_BUCKET,
+                    "bank_bucket": settings.SUPABASE_BANK_BUCKET,
+                }, status=400)
+        return redirect("configuration")
+    return render(request, "panel/configuration.html", {
+        "preferences": preferences,
+        "payment_form": payment_form,
+        "profile_bucket": settings.SUPABASE_PROFILE_BUCKET,
+        "patient_bucket": settings.SUPABASE_PATIENT_BUCKET,
+        "payment_bucket": settings.SUPABASE_PAYMENT_BUCKET,
+        "bank_bucket": settings.SUPABASE_BANK_BUCKET,
+    })

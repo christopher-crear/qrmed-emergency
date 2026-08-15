@@ -1,0 +1,68 @@
+{% extends 'panel/base.html' %}
+{% block title %}Configuración{% endblock %}
+{% block content %}
+<section class="configuration-page">
+  <header class="configuration-heading">
+    <div><span class="section-eyebrow">PANEL ADMINISTRATIVO</span><h1>Configuración</h1><p>Personaliza el panel y administra los datos operativos de QRMed.</p></div>
+    <span class="configuration-status"><i data-lucide="shield-check"></i>Configuración protegida</span>
+  </header>
+
+  <div class="configuration-layout">
+    <aside class="configuration-nav">
+      <div class="configuration-admin"><span><i data-lucide="settings-2"></i></span><div><strong>Centro de ajustes</strong><small>{{ admin_profile.full_name|default:'Administrador' }}</small></div></div>
+      <nav>
+        <a href="#appearance" class="active"><i data-lucide="palette"></i><span>Apariencia</span></a>
+        <a href="#notifications"><i data-lucide="bell"></i><span>Notificaciones</span></a>
+        <a href="#privacy"><i data-lucide="lock-keyhole"></i><span>Privacidad</span></a>
+        <a href="#payments-settings"><i data-lucide="landmark"></i><span>Bancos y cuentas</span></a>
+        <a href="#storage-status"><i data-lucide="cloud"></i><span>Almacenamiento</span></a>
+      </nav>
+      <div class="configuration-nav-note"><i data-lucide="info"></i><p>Los cambios se almacenan directamente en Supabase.</p></div>
+    </aside>
+
+    <main class="configuration-content">
+      <form method="post" class="configuration-preferences-form">
+        {% csrf_token %}<input type="hidden" name="section" value="preferences">
+        <article class="configuration-card" id="appearance">
+          <header><span class="configuration-icon blue"><i data-lucide="palette"></i></span><div><span class="section-eyebrow">PREFERENCIAS</span><h2>Apariencia e idioma</h2><p>Elige cómo quieres visualizar el panel.</p></div></header>
+          <div class="configuration-language"><label for="configurationLanguage">Idioma del panel</label><div><i data-lucide="languages"></i><select id="configurationLanguage" name="language"><option value="es" {% if preferences.language != 'en' %}selected{% endif %}>Español — Ecuador</option><option value="en" {% if preferences.language == 'en' %}selected{% endif %}>English</option></select></div></div>
+          <fieldset class="theme-selector"><legend>Tema de la interfaz</legend><label><input type="radio" name="theme" value="light" {% if preferences.theme != 'dark' %}checked{% endif %}><span><i data-lucide="sun"></i><strong>Claro</strong><small>Interfaz luminosa</small></span></label><label><input type="radio" name="theme" value="dark" {% if preferences.theme == 'dark' %}checked{% endif %}><span><i data-lucide="moon"></i><strong>Oscuro</strong><small>Menor brillo visual</small></span></label></fieldset>
+        </article>
+
+        <article class="configuration-card" id="notifications">
+          <header><span class="configuration-icon purple"><i data-lucide="bell-ring"></i></span><div><span class="section-eyebrow">COMUNICACIONES</span><h2>Notificaciones</h2><p>Decide qué actividad deseas recibir.</p></div></header>
+          <div class="configuration-switches">
+            {% include 'panel/partials/switch.html' with name='order_updates' title='Actualizaciones de pedidos' text='Alertas cuando una pulsera cambie de estado' checked=preferences.order_updates %}
+            {% include 'panel/partials/switch.html' with name='qr_activity' title='Actividad de códigos QR' text='Notificación cuando una ficha sea escaneada' checked=preferences.qr_activity %}
+            {% include 'panel/partials/switch.html' with name='email_news' title='Resumen por correo' text='Novedades y actividad importante de la plataforma' checked=preferences.email_news %}
+            {% include 'panel/partials/switch.html' with name='system_alerts' title='Alertas del sistema' text='Mantenimiento, seguridad y actualizaciones' checked=preferences.system_alerts %}
+          </div>
+        </article>
+
+        <article class="configuration-card" id="privacy">
+          <header><span class="configuration-icon green"><i data-lucide="shield-check"></i></span><div><span class="section-eyebrow">SEGURIDAD</span><h2>Privacidad</h2><p>Controla la visibilidad y el análisis de la plataforma.</p></div></header>
+          <div class="configuration-switches">
+            {% include 'panel/partials/switch.html' with name='public_profile' title='Ficha pública de emergencia' text='Permitir el acceso al escanear un QR válido' checked=preferences.public_profile %}
+            {% include 'panel/partials/switch.html' with name='analytics' title='Análisis de uso' text='Registrar métricas anónimas para mejorar el servicio' checked=preferences.analytics %}
+          </div>
+        </article>
+        <div class="configuration-save-bar"><div><i data-lucide="circle-check"></i><span><strong>Preferencias del panel</strong><small>Guarda apariencia, notificaciones y privacidad.</small></span></div><button class="btn btn-primary"><i data-lucide="save"></i>Guardar preferencias</button></div>
+      </form>
+
+      <article class="configuration-card payment-configuration-card" id="payments-settings">
+        <header><span class="configuration-icon orange"><i data-lucide="landmark"></i></span><div><span class="section-eyebrow">COBROS</span><h2>Bancos y cuentas</h2><p>Administra varias cuentas, su logo, código QR, orden y visibilidad para los pacientes.</p></div></header>
+        <div class="bank-settings-cta"><span><i data-lucide="building-2"></i></span><div><strong>Directorio bancario</strong><p>Las cuentas visibles se muestran automáticamente en el checkout. La configuración anterior queda como respaldo si todavía no registras bancos nuevos.</p></div><a class="btn btn-primary" href="{% url 'banks' %}"><i data-lucide="arrow-right"></i>Administrar bancos</a></div>
+        <footer><span><i data-lucide="lock-keyhole"></i>Los datos bancarios se muestran únicamente a usuarios autenticados durante el pago.</span></footer>
+      </article>
+
+      <article class="configuration-card storage-configuration-card" id="storage-status">
+        <header><span class="configuration-icon cyan"><i data-lucide="cloud"></i></span><div><span class="section-eyebrow">SUPABASE</span><h2>Almacenamiento privado</h2><p>Buckets utilizados por el panel para archivos protegidos.</p></div></header>
+        <div class="storage-bucket-grid"><div><i data-lucide="user-round"></i><span><strong>{{ profile_bucket }}</strong><small>Avatares y portadas</small></span><em>Privado</em></div><div><i data-lucide="image"></i><span><strong>{{ patient_bucket }}</strong><small>Fotografías de pacientes</small></span><em>Privado</em></div><div><i data-lucide="receipt-text"></i><span><strong>{{ payment_bucket }}</strong><small>Comprobantes</small></span><em>Privado</em></div><div><i data-lucide="landmark"></i><span><strong>{{ bank_bucket }}</strong><small>Logos y códigos QR bancarios</small></span><em>Privado</em></div></div>
+      </article>
+
+      <article class="configuration-danger"><span><i data-lucide="triangle-alert"></i></span><div><h2>Zona de seguridad</h2><p>La eliminación de una cuenta requiere confirmación directa en Supabase Auth.</p></div><a class="btn btn-outline" href="{% url 'payments_export' %}"><i data-lucide="download"></i>Exportar pagos</a><button type="button" disabled><i data-lucide="trash-2"></i>Eliminar cuenta</button></article>
+    </main>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script>document.querySelectorAll('.configuration-nav a').forEach(link=>link.addEventListener('click',()=>{document.querySelectorAll('.configuration-nav a').forEach(item=>item.classList.remove('active'));link.classList.add('active');}));</script>{% endblock %}

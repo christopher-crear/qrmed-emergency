@@ -1,0 +1,38 @@
+<script>
+(() => {
+  const editPanel = document.getElementById('profileEditPanel');
+  const openEdit = () => {
+    editPanel.hidden = false;
+    editPanel.scrollIntoView({behavior: 'smooth', block: 'center'});
+  };
+  document.querySelector('[data-profile-edit]')?.addEventListener('click', openEdit);
+  document.querySelector('[data-profile-cancel]')?.addEventListener('click', () => editPanel.hidden = true);
+  document.querySelector('[data-pick-avatar]')?.addEventListener('click', () => {
+    openEdit();
+    document.getElementById('id_avatar')?.click();
+  });
+  document.querySelector('[data-pick-cover]')?.addEventListener('click', () => {
+    openEdit();
+    document.getElementById('id_cover')?.click();
+  });
+  document.getElementById('id_avatar')?.addEventListener('change', event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const image = document.getElementById('profileAvatarPreview');
+    image.src = URL.createObjectURL(file);
+    image.hidden = false;
+    image.nextElementSibling.hidden = true;
+  });
+  document.getElementById('id_cover')?.addEventListener('change', event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const cover = document.querySelector('.profile-cover-modern');
+    cover.classList.remove('profile-cover-gradient');
+    cover.style.backgroundImage = `linear-gradient(90deg,rgba(5,18,42,.08),rgba(5,18,42,.2)),url('${URL.createObjectURL(file)}')`;
+  });
+  document.querySelectorAll('[data-toggle-password]').forEach(button => button.addEventListener('click', () => {
+    const input = button.parentElement.querySelector('input');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }));
+})();
+</script>

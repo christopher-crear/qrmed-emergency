@@ -1,0 +1,55 @@
+{% extends 'panel/base.html' %}{% load panel_extras %}
+{% block title %}Comprobante {{ order.order_number }}{% endblock %}
+{% block content %}
+  <div class="payments-underlay" aria-hidden="true">{% include 'panel/partials/payments_content.html' %}</div>
+  <div class="payment-detail-layer" id="paymentDetailLayer">
+    <article class="payment-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="paymentDialogTitle">
+      <header class="payment-dialog-header"><h1 id="paymentDialogTitle">Comprobante — {{ order.order_number }}</h1><a class="dialog-close" href="{% url 'payments' %}?q={{ q|urlencode }}&status={{ current_status }}&method={{ current_method }}" aria-label="Cerrar"><i data-lucide="x"></i></a></header>
+      <div class="payment-dialog-body">
+        <div class="payment-status-banner status-{{ payment_state }}"><span><i data-lucide="{% if payment_state == 'approved' %}circle-check{% elif payment_state == 'rejected' %}circle-x{% else %}clock-3{% endif %}"></i> {{ payment_state|status_label }}</span><strong>{{ payment_state|status_label }}</strong></div>
+        <div class="payment-detail-grid">
+          <div class="payment-detail-column">
+            <section class="payment-info-panel">
+              <h2><i data-lucide="user-round"></i> Datos del paciente</h2>
+              <div class="payment-patient-row">{% if customer_avatar_url %}<img class="payment-avatar payment-avatar-photo" src="{{ customer_avatar_url }}" alt="Foto del paciente" data-avatar-fallback><span class="payment-avatar avatar-placeholder" hidden><i data-lucide="user-round"></i></span>{% else %}<span class="payment-avatar avatar-placeholder"><i data-lucide="user-round"></i></span>{% endif %}<div><strong>{% if patient %}{{ patient.full_name }}{% else %}{{ customer.full_name|default:'Usuario sin perfil' }}{% endif %}</strong><small>CI: {{ patient.id_number|default:'Sin identificación' }}</small></div></div>
+              <div class="payment-contact-lines"><span><i data-lucide="mail"></i> {{ patient.email|default:'Sin correo registrado' }}</span><span><i data-lucide="phone"></i> {{ patient.phone|default:customer_profile.phone|default:'Sin teléfono registrado' }}</span></div>
+            </section>
+            <section class="payment-info-panel">
+              <h2><i data-lucide="package"></i> Datos del pedido</h2>
+              <dl class="payment-data-list"><div><dt>N.º de pedido</dt><dd>{{ order.order_number }}</dd></div><div><dt>Producto</dt><dd>{{ product.name|default:'Producto no disponible' }}</dd></div><div><dt>Cantidad</dt><dd>{{ first_item.quantity|default:'—' }}</dd></div><div><dt>Total</dt><dd>{{ order.total|money }}</dd></div><div><dt>Fecha de compra</dt><dd>{{ order.created_at|date:'d M Y, h:i a' }}</dd></div></dl>
+            </section>
+            <section class="payment-info-panel">
+              <h2>Información del pago</h2>
+              <dl class="payment-data-list"><div><dt>Método</dt><dd>{{ order.payment_method|payment_method_label }}</dd></div><div><dt>Enviado</dt><dd>{{ order.created_at|date:'d M Y, h:i a' }}</dd></div><div><dt>Valor</dt><dd>{{ order.total|money }}</dd></div></dl>
+              {% if order.payment_rejection_reason %}<p class="payment-rejection-note"><strong>Motivo anterior:</strong> {{ order.payment_rejection_reason }}</p>{% endif %}
+            </section>
+          </div>
+          <div class="payment-detail-column">
+            <section class="payment-proof-panel">
+              <div class="payment-panel-title"><h2>Comprobante adjunto</h2>{% if proof_url %}<button type="button" class="proof-expand" data-expand-proof><i data-lucide="maximize-2"></i> Ampliar</button>{% endif %}</div>
+              {% if proof_url %}<button type="button" class="proof-preview" data-expand-proof>{% if proof_is_pdf %}<object data="{{ proof_url }}#toolbar=0" type="application/pdf" aria-label="Comprobante PDF"><span><i data-lucide="file-text"></i> Ver comprobante PDF</span></object>{% else %}<img src="{{ proof_url }}" alt="Comprobante {{ order.order_number }}" data-proof-fallback><span class="proof-image-error" hidden><i data-lucide="image-off"></i> No se pudo previsualizar</span>{% endif %}</button><strong class="proof-file-name">{{ proof_name }}</strong><a class="btn btn-outline payment-download" href="{{ proof_url }}" download="{{ proof_name }}" target="_blank" rel="noopener"><i data-lucide="download"></i> Descargar original</a>{% else %}<div class="proof-missing"><i data-lucide="image-off"></i><span>No se pudo cargar el comprobante.</span></div>{% endif %}
+            </section>
+            <section class="payment-admin-panel">
+              <h2>Acciones del administrador</h2>
+              {% if payment_state != 'approved' %}<form method="post" action="{% url 'payment_review' order.id 'approve' %}">{% csrf_token %}<button class="btn payment-approve"><i data-lucide="circle-check"></i> Aprobar pago</button></form><button type="button" class="btn payment-reject" data-open-reject><i data-lucide="circle-x"></i> Rechazar pago</button><form class="payment-reject-form" method="post" action="{% url 'payment_review' order.id 'reject' %}" hidden>{% csrf_token %}<label for="rejectReason">Motivo del rechazo</label><textarea id="rejectReason" name="reason" required placeholder="Explica por qué el comprobante no es válido"></textarea><div><button type="button" class="btn btn-muted" data-cancel-reject>Cancelar</button><button class="btn btn-danger">Confirmar rechazo</button></div></form><p>Al aprobar, el pedido pasará automáticamente a producción. Al rechazar, el paciente podrá subir un nuevo comprobante.</p>{% else %}<div class="payment-reviewed"><i data-lucide="badge-check"></i><strong>Pago aprobado</strong><span>Este comprobante ya fue revisado.</span></div>{% endif %}
+            </section>
+          </div>
+        </div>
+      </div>
+    </article>
+  </div>
+  {% if proof_url %}<div class="proof-lightbox" id="proofLightbox" hidden><article><header><strong>{{ proof_name }}</strong><button type="button" data-close-proof aria-label="Cerrar"><i data-lucide="x"></i></button></header><div>{% if proof_is_pdf %}<iframe src="{{ proof_url }}" title="Comprobante PDF ampliado"></iframe>{% else %}<img src="{{ proof_url }}" alt="Comprobante ampliado">{% endif %}</div><footer><a class="btn btn-outline" href="{{ proof_url }}" download="{{ proof_name }}" target="_blank" rel="noopener"><i data-lucide="download"></i> Descargar original</a></footer></article></div>{% endif %}
+{% endblock %}
+{% block scripts %}<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const lightbox = document.getElementById('proofLightbox');
+  const closeProof = () => { if (lightbox) { lightbox.hidden = true; document.body.classList.remove('modal-open'); } };
+  document.querySelectorAll('[data-expand-proof]').forEach(button => button.addEventListener('click', () => { if (lightbox) { lightbox.hidden = false; document.body.classList.add('modal-open'); } }));
+  lightbox?.querySelector('[data-close-proof]')?.addEventListener('click', closeProof);
+  lightbox?.addEventListener('click', event => { if (event.target === lightbox) closeProof(); });
+  const rejectForm = document.querySelector('.payment-reject-form');
+  document.querySelector('[data-open-reject]')?.addEventListener('click', event => { event.currentTarget.hidden = true; rejectForm.hidden = false; rejectForm.querySelector('textarea')?.focus(); });
+  rejectForm?.querySelector('[data-cancel-reject]')?.addEventListener('click', () => { rejectForm.hidden = true; document.querySelector('[data-open-reject]').hidden = false; });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && lightbox && !lightbox.hidden) closeProof(); });
+});
+</script>{% endblock %}

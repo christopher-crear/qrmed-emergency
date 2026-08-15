@@ -1,0 +1,57 @@
+{% load panel_extras %}
+<div class="order-modal-v3" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
+  {% if patient_mode %}
+    <a class="order-modal-v3__backdrop" href="{% url 'patient_orders' %}?q={{ list_q|urlencode }}" aria-label="Cerrar detalle"></a>
+  {% else %}
+    <a class="order-modal-v3__backdrop" href="{% url 'orders' %}?q={{ list_q|urlencode }}&status={{ list_current_status|default:'all' }}" aria-label="Cerrar detalle"></a>
+  {% endif %}
+
+  <article class="order-modal-v3__dialog">
+    <header class="order-modal-v3__header">
+      <h1 id="orderModalTitle">{{ order.order_number }}</h1>
+      {% if patient_mode %}
+        <a href="{% url 'patient_orders' %}?q={{ list_q|urlencode }}" aria-label="Cerrar"><i data-lucide="x"></i></a>
+      {% else %}
+        <a href="{% url 'orders' %}?q={{ list_q|urlencode }}&status={{ list_current_status|default:'all' }}" aria-label="Cerrar"><i data-lucide="x"></i></a>
+      {% endif %}
+    </header>
+
+    <div class="order-modal-v3__body">
+      <div class="order-modal-v3__grid">
+        <div><span>Producto</span><strong>{{ product.name|default:'Producto no disponible' }}{% if items|length > 1 %} +{{ items|length|add:'-1' }}{% endif %}</strong></div>
+        <div><span>Color</span><strong>{{ first_item.selected_color|default:'No definido' }}</strong></div>
+        <div><span>Talla</span><strong>{{ first_item.selected_size|default:'No definida' }}</strong></div>
+        <div><span>Cantidad</span><strong>{{ first_item.quantity|default:'0' }}</strong></div>
+        <div><span>Precio unitario</span><strong>{{ first_item.unit_price|money }}</strong></div>
+        <div><span>Total</span><strong>{{ order.total|money }}</strong></div>
+        <div><span>Fecha del pedido</span><strong>{{ order.created_at|date:'d/m/Y' }}</strong></div>
+        <div><span>Entrega estimada</span><strong>{{ order.estimated_delivery|date:'d/m/Y'|default:'Por definir' }}</strong></div>
+        <div><span>Estado</span><strong>{{ order.status|status_label }}</strong></div>
+      </div>
+
+      {% if patient_mode %}
+        {% if proof_url %}
+          <section class="order-modal-v3__proof">
+            <h2>Comprobante de pago</h2>
+            <a class="btn btn-muted" href="{{ proof_url }}" target="_blank" rel="noopener"><i data-lucide="download"></i> Descargar comprobante</a>
+          </section>
+        {% endif %}
+      {% else %}
+        <form class="order-modal-v3__update" method="post" action="{% url 'order_update' order.id %}">
+          {% csrf_token %}
+          <h2>Actualizar pedido</h2>
+          <div class="order-modal-v3__form-grid">
+            <div><label for="{{ form.status.id_for_label }}">Estado</label>{{ form.status }}</div>
+            <div><label for="{{ form.estimated_delivery.id_for_label }}">Entrega estimada</label>{{ form.estimated_delivery }}</div>
+            <div class="is-full"><label for="{{ form.tracking_number.id_for_label }}">Número de rastreo</label>{{ form.tracking_number }}</div>
+          </div>
+          <div class="order-modal-v3__actions">
+            <button type="button" class="btn btn-danger" id="deleteOrderButton"><i data-lucide="trash-2"></i> Eliminar pedido</button>
+            <button class="btn btn-primary"><i data-lucide="check"></i> Guardar cambios</button>
+          </div>
+        </form>
+        <form id="deleteOrderForm" method="post" action="{% url 'order_delete' order.id %}">{% csrf_token %}</form>
+      {% endif %}
+    </div>
+  </article>
+</div>

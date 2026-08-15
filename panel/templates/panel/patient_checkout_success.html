@@ -1,0 +1,24 @@
+{% extends 'panel/user_base.html' %}{% load panel_extras %}
+{% block title %}Pedido recibido{% endblock %}
+{% block content %}
+<section class="checkout-success-page">
+  <span class="success-clock"><i data-lucide="clock-3"></i></span>
+  <h1>¡Pedido recibido!</h1>
+  <p>Estamos verificando tu comprobante de pago</p>
+  <strong class="success-order-number">{{ order.order_number }}</strong>
+  <div class="success-warning"><i data-lucide="info"></i><span><b>Pago pendiente de validación</b>El administrador revisará tu comprobante y aprobará el pedido. Cuando sea confirmado, tu pulsera pasará automáticamente a producción.</span></div>
+  <article class="patient-card success-details">
+    <h2>Detalles del pedido</h2>
+    <dl>
+      <div><dt>Producto</dt><dd>{{ product.name|default:'Producto' }}{% if items|length > 1 %} +{{ items|length|add:'-1' }} más{% endif %}</dd></div>
+      <div><dt>Color</dt><dd>{{ first_item.selected_color|default:'—' }}</dd></div>
+      <div><dt>Talla</dt><dd>{{ first_item.selected_size|default:'—' }}</dd></div>
+      <div><dt>Estado del pago</dt><dd>Pendiente de validación</dd></div>
+      <div><dt>Total</dt><dd>{{ order.total|money }}</dd></div>
+      <div><dt>Entrega estimada</dt><dd>5–8 días tras confirmar pago</dd></div>
+    </dl>
+  </article>
+  <p class="success-redirect">Puedes consultar el avance desde “Mis pedidos”.</p>
+  <div class="success-actions"><a class="btn" href="{% url 'patient_dashboard' %}">Ir al inicio</a><a class="btn btn-primary" href="{% url 'patient_orders' %}">Ver mis pedidos</a></div>
+</section>
+{% endblock %}

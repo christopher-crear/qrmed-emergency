@@ -1,0 +1,23 @@
+{% extends 'panel/user_base.html' %}{% load panel_extras %}
+{% block title %}Inicio{% endblock %}
+{% block content %}
+<div class="patient-page patient-dashboard-page">
+  <header class="patient-page-heading"><div><h1>Hola, {{ session_patient.first_name }} 👋</h1><p>Bienvenido a tu panel de paciente</p></div></header>
+  <section class="patient-kpis">
+    <article><span class="kpi-icon red"><i data-lucide="droplets"></i></span><small>Mi tipo de sangre</small><strong>{{ session_patient.blood_type|default:'—' }}</strong></article>
+    <article><span class="kpi-icon purple"><i data-lucide="package"></i></span><small>Mis pedidos</small><strong>{{ orders_count }}</strong><em>{{ orders_in_progress }} en proceso</em></article>
+    <article><span class="kpi-icon green"><i data-lucide="contact"></i></span><small>Credencial</small><strong>{% if session_patient.status == 'active' %}Activa{% else %}Inactiva{% endif %}</strong></article>
+    <article><span class="kpi-icon cyan"><i data-lucide="scan-line"></i></span><small>Escaneos QR</small><strong>{{ session_patient.qr_scan_count|default:0 }}</strong><em>{% if session_patient.last_qr_scan_at %}Último: {{ session_patient.last_qr_scan_at|timesince }}{% else %}Sin escaneos aún{% endif %}</em></article>
+  </section>
+  <section class="patient-shortcuts">
+    <a href="{% url 'patient_credential' %}"><span class="shortcut-icon blue"><i data-lucide="contact"></i></span><em>Digital</em><h2>Mi Credencial</h2><p>Ver mi QR médico</p><b>Ir ahora <i data-lucide="arrow-right"></i></b></a>
+    <a href="{% url 'patient_store' %}"><span class="shortcut-icon purple"><i data-lucide="shopping-cart"></i></span><em>Tienda</em><h2>Comprar Pulsera</h2><p>Modelos disponibles</p><b>Ir ahora <i data-lucide="arrow-right"></i></b></a>
+    <a href="{% url 'patient_cart' %}"><span class="shortcut-icon orange"><i data-lucide="shopping-cart"></i></span><em>{% if cart_count %}{{ cart_count }} artículo{{ cart_count|pluralize }}{% else %}Vacío{% endif %}</em><h2>Mi Carrito</h2><p>Revisar mi compra</p><b>Ir ahora <i data-lucide="arrow-right"></i></b></a>
+    <a href="{% url 'patient_orders' %}"><span class="shortcut-icon green"><i data-lucide="package"></i></span><em>{{ orders_count }} pedidos</em><h2>Mis Pedidos</h2><p>Historial y seguimiento</p><b>Ir ahora <i data-lucide="arrow-right"></i></b></a>
+  </section>
+  <section class="patient-dashboard-bottom">
+    <article class="patient-card credential-preview"><header><h2>Mi Credencial</h2><a href="{% url 'patient_credential' %}">Ver completa <i data-lucide="arrow-right"></i></a></header><div class="medical-card-front"><div class="medical-card-brand"><i data-lucide="qr-code"></i> QRMed Emergency <span>Activa</span></div><div><h3>{{ session_patient.full_name|truncatechars:28 }}</h3><p>ID: {{ session_patient.id_number }}</p><b>{{ session_patient.blood_type }}</b></div><img src="{% url 'patient_credential_qr' %}" alt="QR médico"></div></article>
+    <article class="patient-card recent-user-orders"><header><h2>Pedidos recientes</h2><a href="{% url 'patient_orders' %}">Ver todos <i data-lucide="arrow-right"></i></a></header>{% for row in recent_orders %}<a href="{% url 'patient_order_detail' row.order.id %}"><span><i data-lucide="package"></i></span><div><strong>{{ row.order.order_number }}</strong><small>{{ row.order.created_at|date:'d/m/Y' }} · {{ row.order.total|money }}</small></div><em>{{ row.order.status|status_label }}</em></a>{% empty %}<div class="empty-mini">Todavía no tienes pedidos.</div>{% endfor %}</article>
+  </section>
+</div>
+{% endblock %}

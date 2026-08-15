@@ -1,0 +1,204 @@
+{% extends 'panel/base.html' %}
+{% block title %}Bancos y cuentas{% endblock %}
+{% block content %}
+<section class="bank-admin-page">
+  <header class="bank-page-heading">
+    <div>
+      <span class="section-eyebrow">CONFIGURACIÓN DE COBROS</span>
+      <h1>Bancos y cuentas</h1>
+      <p>Publica las cuentas que verán los pacientes antes de enviar el comprobante de pago.</p>
+    </div>
+    <a class="btn bank-back-button" href="{% url 'payments' %}"><i data-lucide="chevron-left"></i> Volver a pagos</a>
+  </header>
+
+  <div class="bank-admin-layout">
+    <article class="bank-form-card">
+      <header class="bank-form-card__heading">
+        <span><i data-lucide="badge-dollar-sign"></i></span>
+        <div>
+          <small>{% if editing_bank %}EDITANDO CUENTA{% else %}DATOS DE TRANSFERENCIA{% endif %}</small>
+          <h2>{% if editing_bank %}Editar banco{% else %}Configurar un banco{% endif %}</h2>
+          <p>Los campos con asterisco son necesarios. El logo y el código QR son opcionales.</p>
+        </div>
+      </header>
+
+      {% if not schema_ready %}
+        <div class="bank-schema-warning"><i data-lucide="triangle-alert"></i><div><strong>Falta preparar Supabase</strong><span>Ejecuta <code>supabase_bancos.sql</code> en el SQL Editor antes de guardar cuentas.</span></div></div>
+      {% endif %}
+
+      <form method="post" enctype="multipart/form-data" class="bank-form" novalidate>
+        {% csrf_token %}
+        {% if editing_bank %}<input type="hidden" name="bank_id" value="{{ editing_bank.id }}">{% endif %}
+        <datalist id="bank-name-options">
+          <option value="Banco de Loja"></option>
+          <option value="Banco Pichincha"></option>
+          <option value="Banco Guayaquil"></option>
+          <option value="Banco del Pacífico"></option>
+          <option value="Produbanco"></option>
+          <option value="Banco Internacional"></option>
+          <option value="Banco Bolivariano"></option>
+          <option value="Cooperativa JEP"></option>
+          <option value="CoopMego"></option>
+        </datalist>
+
+        <label class="bank-field bank-field--full">
+          <span>Banco *</span>
+          {{ form.bank_name }}
+          {% for error in form.bank_name.errors %}<em>{{ error }}</em>{% endfor %}
+        </label>
+
+        <label class="bank-field bank-field--full">
+          <span>Titular de la cuenta *</span>
+          {{ form.account_holder }}
+          {% for error in form.account_holder.errors %}<em>{{ error }}</em>{% endfor %}
+        </label>
+
+        <div class="bank-form-grid">
+          <label class="bank-field">
+            <span>Número de cuenta *</span>
+            {{ form.account_number }}
+            {% for error in form.account_number.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="bank-field">
+            <span>Tipo de cuenta *</span>
+            {{ form.account_type }}
+            {% for error in form.account_type.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="bank-field">
+            <span>Cédula o RUC del titular *</span>
+            {{ form.tax_id }}
+            {% for error in form.tax_id.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+          <label class="bank-field">
+            <span>Orden</span>
+            {{ form.display_order }}
+            {% for error in form.display_order.errors %}<em>{{ error }}</em>{% endfor %}
+          </label>
+        </div>
+
+        <label class="bank-field bank-field--full">
+          <span>Indicaciones para el paciente</span>
+          {{ form.instructions }}
+          <small>Ejemplo: “Incluye tu nombre y número de pedido en el concepto”.</small>
+          {% for error in form.instructions.errors %}<em>{{ error }}</em>{% endfor %}
+        </label>
+
+        <label class="bank-visible-switch">
+          {{ form.is_visible }}
+          <span class="bank-visible-check"><i data-lucide="check"></i></span>
+          <span><strong>Visible para pacientes</strong><small>Actívalo cuando los datos estén listos para recibir pagos.</small></span>
+        </label>
+
+        <div class="bank-upload-grid">
+          <label class="bank-upload" data-bank-upload>
+            {{ form.logo }}
+            <span class="bank-upload-icon"><i data-lucide="upload"></i></span>
+            <span class="bank-upload-copy"><strong>Logo del banco <small>(opcional)</small></strong><em>PNG, JPG o WEBP</em></span>
+            <span class="bank-upload-button">Seleccionar archivo</span>
+            <span class="bank-upload-name" data-bank-file-name>{% if editing_bank.logo_path %}Logo actual cargado{% else %}Sin archivo{% endif %}</span>
+            {% if editing_bank.logo_url %}<img class="bank-upload-preview" src="{{ editing_bank.logo_url }}" alt="Logo actual de {{ editing_bank.bank_name }}">{% endif %}
+            {% for error in form.logo.errors %}<b class="bank-upload-error">{{ error }}</b>{% endfor %}
+          </label>
+          <label class="bank-upload" data-bank-upload>
+            {{ form.qr_image }}
+            <span class="bank-upload-icon"><i data-lucide="upload"></i></span>
+            <span class="bank-upload-copy"><strong>Código QR <small>(opcional)</small></strong><em>Imagen nítida y cuadrada</em></span>
+            <span class="bank-upload-button">Seleccionar archivo</span>
+            <span class="bank-upload-name" data-bank-file-name>{% if editing_bank.qr_path %}QR actual cargado{% else %}Sin archivo{% endif %}</span>
+            {% if editing_bank.qr_url %}<img class="bank-upload-preview bank-upload-preview--qr" src="{{ editing_bank.qr_url }}" alt="QR actual de {{ editing_bank.bank_name }}">{% endif %}
+            {% for error in form.qr_image.errors %}<b class="bank-upload-error">{{ error }}</b>{% endfor %}
+          </label>
+        </div>
+
+        <div class="bank-form-actions">
+          <a class="btn" href="{% url 'banks' %}">{% if editing_bank %}Cancelar edición{% else %}Limpiar{% endif %}</a>
+          <button class="btn btn-primary" type="submit" {% if not schema_ready %}disabled{% endif %}><i data-lucide="check"></i>{% if editing_bank %}Actualizar banco{% else %}Guardar banco{% endif %}</button>
+        </div>
+      </form>
+    </article>
+
+    <section class="bank-directory">
+      <header class="bank-directory-heading">
+        <div><span class="section-eyebrow">DIRECTORIO PUBLICADO</span><h2>Cuentas registradas</h2><p>{{ banks|length }} cuenta{{ banks|length|pluralize:"s" }} configurada{{ banks|length|pluralize:"s" }} · {{ visible_count }} visible{{ visible_count|pluralize:"s" }}</p></div>
+        <span class="bank-directory-note"><i data-lucide="eye"></i> Solo las cuentas visibles aparecen al paciente</span>
+      </header>
+
+      {% if banks %}
+        <div class="bank-card-grid">
+          {% for bank in banks %}
+            <article class="bank-account-card">
+              <header>
+                <div class="bank-logo-box">
+                  {% if bank.logo_url %}<img src="{{ bank.logo_url }}" alt="Logo {{ bank.bank_name }}" data-bank-logo>{% else %}<span><i data-lucide="landmark"></i></span>{% endif %}
+                </div>
+                <span class="bank-visibility {% if not bank.is_visible %}is-hidden{% endif %}">{% if bank.is_visible %}Visible{% else %}Oculta{% endif %}</span>
+              </header>
+              <h3>{{ bank.bank_name }}</h3>
+              <p class="bank-account-type">{{ bank.account_type }}</p>
+              <dl>
+                <div><dt>Titular</dt><dd>{{ bank.account_holder }}</dd></div>
+                <div><dt>Número de cuenta</dt><dd>{{ bank.account_number }}</dd></div>
+                <div><dt>Cédula / RUC</dt><dd>{{ bank.tax_id }}</dd></div>
+              </dl>
+              {% if bank.instructions %}<p class="bank-card-instructions"><i data-lucide="info"></i>{{ bank.instructions }}</p>{% endif %}
+              {% if bank.qr_url %}
+                <button class="bank-qr-strip" type="button" data-bank-qr-open data-src="{{ bank.qr_url }}" data-title="{{ bank.bank_name }}">
+                  <img src="{{ bank.qr_url }}" alt="QR {{ bank.bank_name }}">
+                  <span><strong>Código QR disponible</strong><small>Pulsa para ampliar</small></span>
+                </button>
+              {% else %}
+                <div class="bank-qr-strip bank-qr-strip--empty"><span class="bank-qr-placeholder"><i data-lucide="qr-code"></i></span><span><strong>Sin código QR</strong><small>Puedes agregarlo al editar</small></span></div>
+              {% endif %}
+              <footer>
+                <a class="btn" href="{% url 'banks' %}?edit={{ bank.id }}"><i data-lucide="pencil"></i> Editar datos</a>
+                <form method="post" action="{% url 'bank_toggle_visibility' bank.id %}">{% csrf_token %}<button class="btn {% if bank.is_visible %}bank-hide-button{% else %}bank-show-button{% endif %}" type="submit">{% if bank.is_visible %}<i data-lucide="eye-off"></i> Ocultar{% else %}<i data-lucide="eye"></i> Mostrar{% endif %}</button></form>
+              </footer>
+            </article>
+          {% endfor %}
+        </div>
+      {% elif schema_ready %}
+        <div class="bank-empty-state"><span><i data-lucide="landmark"></i></span><h3>Aún no hay cuentas registradas</h3><p>Completa el formulario para publicar la primera cuenta bancaria de QRMed.</p></div>
+      {% else %}
+        <div class="bank-empty-state"><span><i data-lucide="database"></i></span><h3>La tabla todavía no existe</h3><p>Ejecuta el script SQL incluido con esta versión y vuelve a cargar la página.</p></div>
+      {% endif %}
+    </section>
+  </div>
+</section>
+
+<div class="bank-qr-lightbox" id="bankQrLightbox" hidden>
+  <article>
+    <header><strong id="bankQrTitle">Código QR</strong><button type="button" data-bank-qr-close aria-label="Cerrar"><i data-lucide="x"></i></button></header>
+    <div><img id="bankQrImage" alt="Código QR bancario ampliado"></div>
+    <p>Escanea este código desde la aplicación bancaria para realizar el pago.</p>
+  </article>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  document.querySelectorAll('[data-bank-upload]').forEach(box => {
+    const input = box.querySelector('input[type="file"]');
+    const name = box.querySelector('[data-bank-file-name]');
+    if (!input || !name) return;
+    input.addEventListener('change', () => { name.textContent = input.files[0]?.name || 'Sin archivo'; });
+  });
+
+  document.querySelectorAll('[data-bank-logo]').forEach(image => image.addEventListener('error', () => {
+    image.closest('.bank-logo-box').innerHTML = '<span><i data-lucide="landmark"></i></span>';
+    window.lucide?.createIcons();
+  }));
+
+  const lightbox = document.getElementById('bankQrLightbox');
+  const image = document.getElementById('bankQrImage');
+  const title = document.getElementById('bankQrTitle');
+  const close = () => { lightbox.hidden = true; document.body.classList.remove('modal-open'); };
+  document.querySelectorAll('[data-bank-qr-open]').forEach(button => button.addEventListener('click', () => {
+    image.src = button.dataset.src;
+    title.textContent = button.dataset.title || 'Código QR';
+    lightbox.hidden = false;
+    document.body.classList.add('modal-open');
+  }));
+  lightbox.querySelector('[data-bank-qr-close]')?.addEventListener('click', close);
+  lightbox.addEventListener('click', event => { if (event.target === lightbox) close(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !lightbox.hidden) close(); });
+})();
+</script>{% endblock %}

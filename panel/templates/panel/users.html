@@ -1,0 +1,39 @@
+{% extends 'panel/base.html' %}
+{% block title %}Usuarios y permisos{% endblock %}
+{% block content %}
+<section class="users-page">
+  <header class="users-heading">
+    <div><span class="section-eyebrow">ADMINISTRACIÓN</span><h1>Usuarios y permisos</h1><p>Gestiona el acceso, estado y nivel de permisos de cada cuenta.</p></div>
+  </header>
+
+  <div class="users-stats">
+    <article><span class="user-stat-icon blue"><i data-lucide="users"></i></span><div><small>Total de usuarios</small><strong>{{ users_total }}</strong></div></article>
+    <article><span class="user-stat-icon purple"><i data-lucide="shield-check"></i></span><div><small>Administradores</small><strong>{{ admins_total }}</strong></div></article>
+    <article><span class="user-stat-icon green"><i data-lucide="user-check"></i></span><div><small>Cuentas activas</small><strong>{{ active_total }}</strong></div></article>
+    <article><span class="user-stat-icon red"><i data-lucide="user-x"></i></span><div><small>Cuentas bloqueadas</small><strong>{{ blocked_total }}</strong></div></article>
+  </div>
+
+  <div class="users-toolbar">
+    <form class="users-search" method="get" data-auto-search><i data-lucide="search"></i><input name="q" value="{{ q }}" autocomplete="off" placeholder="Buscar por nombre o teléfono..."></form>
+    <span>{{ profiles|length }} resultado{{ profiles|length|pluralize }}</span>
+  </div>
+
+  <article class="users-table-card">
+    <div class="users-table-scroll"><table class="users-table">
+      <thead><tr><th>Usuario</th><th>Nivel de acceso</th><th>Estado</th><th>Acción</th></tr></thead>
+      <tbody>{% for profile in profiles %}<tr>
+        <td><div class="user-identity">
+          <img src="{% url 'profile_avatar_image' profile.id %}" alt="Foto de {{ profile.full_name }}" loading="lazy" data-avatar-fallback>
+          <span class="user-photo-placeholder" hidden><i data-lucide="user-round"></i></span>
+          <div><strong>{{ profile.full_name|default:'Usuario sin nombre' }}{% if profile.id == admin_profile.id %}<em>Tu cuenta</em>{% endif %}</strong><small><i data-lucide="phone"></i>{{ profile.phone|default:'Sin teléfono registrado' }}</small></div>
+        </div></td>
+        <td><form class="role-form" method="post" action="{% url 'user_role' profile.id %}" onchange="this.submit()">{% csrf_token %}<span class="role-select-icon"><i data-lucide="{% if profile.role == 'admin' or profile.role == 'administrador' %}shield-check{% else %}user-round{% endif %}"></i></span><select name="role" {% if profile.id == admin_profile.id %}title="Tu propia cuenta"{% endif %}><option value="user" {% if profile.role == 'usuario' or profile.role == 'user' %}selected{% endif %}>Usuario</option><option value="admin" {% if profile.role == 'administrador' or profile.role == 'admin' %}selected{% endif %}>Administrador</option></select></form></td>
+        <td><span class="account-status {% if profile.is_active %}active{% else %}blocked{% endif %}"><i data-lucide="{% if profile.is_active %}circle-check{% else %}circle-x{% endif %}"></i>{% if profile.is_active %}Activo{% else %}Bloqueado{% endif %}</span></td>
+        <td><form method="post" action="{% url 'user_status' profile.id %}">{% csrf_token %}<button class="user-block-button {% if not profile.is_active %}unblock{% endif %}" {% if profile.id == admin_profile.id %}disabled{% endif %}><i data-lucide="{% if profile.is_active %}user-x{% else %}user-check{% endif %}"></i>{% if profile.is_active %}Bloquear{% else %}Desbloquear{% endif %}</button></form></td>
+      </tr>{% empty %}<tr><td colspan="4"><div class="users-empty"><i data-lucide="users"></i><strong>No se encontraron usuarios</strong><span>Escribe al menos dos caracteres para buscar.</span></div></td></tr>{% endfor %}</tbody>
+    </table></div>
+  </article>
+
+  <aside class="permissions-note"><span><i data-lucide="shield-check"></i></span><div><strong>Seguridad respaldada por Supabase</strong><p>Los cambios de rol y estado se validan nuevamente en el servidor y mediante las políticas RLS de la base de datos.</p></div></aside>
+</section>
+{% endblock %}

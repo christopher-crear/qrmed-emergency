@@ -1,0 +1,30 @@
+{% extends 'panel/base.html' %}{% load panel_extras %}
+{% block title %}Inicio{% endblock %}
+{% block content %}
+<div class="page-heading dashboard-heading"><div><h1><span id="greeting">Buenas noches</span>, {{ admin_profile.full_name|default:'Administrador' }} 👋</h1><p>Aquí está el resumen de tu actividad</p></div></div>
+<section class="metric-grid">
+  <article class="metric-card"><div><span>Pacientes<br>registrados</span><strong>{{ patient_count }}</strong><small>↗ {{ patient_count }} este mes</small></div><span class="metric-icon blue"><i data-lucide="users"></i></span></article>
+  <article class="metric-card"><div><span>QR generados</span><strong>{{ qr_count }}</strong><small>↗ {{ qr_count }} disponibles</small></div><span class="metric-icon cyan"><i data-lucide="qr-code"></i></span></article>
+  <article class="metric-card"><div><span>Pedidos realizados</span><strong>{{ order_count }}</strong><small>↗ En seguimiento</small></div><span class="metric-icon purple"><i data-lucide="shopping-cart"></i></span></article>
+  <article class="metric-card"><div><span>Tasa de activación</span><strong>{{ activation_rate }}%</strong><small>↗ {{ active_count }} pacientes activos</small></div><span class="metric-icon green"><i data-lucide="activity"></i></span></article>
+</section>
+<section class="chart-grid">
+  <article class="card chart-card wide"><div class="card-title"><div><h2>Crecimiento mensual</h2><p>Pacientes registrados y activos</p></div><span class="badge badge-blue">Últimos 6 meses</span></div><div class="chart-wrap"><canvas id="patientChart"></canvas></div></article>
+  <article class="card chart-card"><div class="card-title"><div><h2>Pedidos mensuales</h2><p>Pulseras solicitadas</p></div></div><div class="chart-wrap"><canvas id="orderChart"></canvas></div></article>
+</section>
+<section class="lower-grid">
+  <article class="card list-card"><div class="card-title"><h2>Pacientes recientes</h2><a href="{% url 'patients' %}">Ver todos <i data-lucide="arrow-right"></i></a></div>
+    {% for patient in recent_patients %}<a class="person-row" href="{% url 'patient_detail' patient.id %}"><img class="avatar" src="{% url 'patient_photo_image' patient.id %}" alt="Foto de {{ patient.full_name }}" loading="lazy" data-avatar-fallback><span class="avatar avatar-placeholder" hidden><i data-lucide="user-round"></i></span><span><strong>{{ patient.full_name }}</strong><small>{{ patient.blood_type|default:'O+' }} · {{ patient.city|default:'Loja' }}</small></span><span class="badge badge-{% if patient.status == 'active' %}green{% else %}gray{% endif %}">{{ patient.status|status_label }}</span></a>{% empty %}<div class="empty-mini">No hay pacientes registrados.</div>{% endfor %}
+  </article>
+  <article class="card list-card"><div class="card-title"><h2>Actividad reciente</h2></div>
+    {% for order in recent_orders %}<a class="activity-row" href="{% url 'order_detail' order.id %}"><span class="activity-icon"><i data-lucide="package"></i></span><span><strong>Pedido {{ order.order_number }} {{ order.status|status_label|lower }}</strong><small>{{ order.created_at|timesince|default:'Ahora' }}</small></span></a>{% empty %}<div class="empty-mini">Todavía no hay actividad.</div>{% endfor %}
+  </article>
+</section>
+{% endblock %}
+{% block scripts %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script><script>
+const labels={{ chart_labels|safe }}, patients={{ patient_chart|safe }}, orders={{ order_chart|safe }};
+const gridColor='rgba(148,163,184,.16)';
+new Chart(document.getElementById('patientChart'),{type:'line',data:{labels,datasets:[{data:patients,borderColor:'#23b9e8',backgroundColor:'rgba(35,185,232,.10)',fill:true,tension:.42,borderWidth:3,pointRadius:0},{data:patients.map((n,i)=>Math.max(0,n-(i===patients.length-1?1:0))),borderColor:'#246bfe',tension:.42,borderWidth:2,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:gridColor},border:{display:false}},y:{beginAtZero:true,ticks:{precision:0},grid:{color:gridColor},border:{display:false}}}}});
+new Chart(document.getElementById('orderChart'),{type:'bar',data:{labels,datasets:[{data:orders,backgroundColor:'#7c3aed',borderRadius:8,barThickness:36}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},border:{display:false}},y:{beginAtZero:true,ticks:{precision:0},grid:{color:gridColor},border:{display:false}}}}});
+const h=new Date().getHours();document.getElementById('greeting').textContent=h<12?'Buenos días':h<19?'Buenas tardes':'Buenas noches';
+</script>{% endblock %}

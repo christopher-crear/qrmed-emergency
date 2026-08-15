@@ -1,0 +1,50 @@
+{% load panel_extras %}
+<section class="orders-board-v3{% if patient_mode %} orders-board-v3--patient{% endif %}">
+  <header class="orders-board-v3__heading">
+    <h1>{% if patient_mode %}Mis pedidos{% else %}Pedidos{% endif %}</h1>
+    <p>{{ orders_total }} pedido{{ orders_total|pluralize:"s" }} realizado{{ orders_total|pluralize:"s" }}</p>
+  </header>
+
+  <div class="orders-board-v3__list">
+    {% for row in rows %}{% with step=row.order.status|status_step %}
+      {% if patient_mode %}
+        <a class="order-card-v3" href="{% url 'patient_order_detail' row.order.id %}?q={{ q|urlencode }}">
+      {% else %}
+        <a class="order-card-v3" href="{% url 'order_detail' row.order.id %}?q={{ q|urlencode }}&status={{ current_status|default:'all' }}">
+      {% endif %}
+        <div class="order-card-v3__top">
+          <div class="order-card-v3__identity">
+            <strong>{{ row.order.order_number }}</strong>
+            <time datetime="{{ row.order.created_at|date:'c' }}">{{ row.order.created_at|date:'d/m/Y' }}</time>
+          </div>
+          <span class="order-card-v3__status status-{{ row.order.status|default:'pending' }}">{{ row.order.status|status_label }}</span>
+        </div>
+
+        <div class="order-card-v3__product">
+          <span class="order-card-v3__icon"><i data-lucide="package"></i></span>
+          <div class="order-card-v3__copy">
+            <h2>{{ row.product.name|default:'Producto no disponible' }}{% if row.items|length > 1 %} +{{ row.items|length|add:'-1' }} producto(s){% endif %}</h2>
+            {% if row.first_item %}<p>{{ row.first_item.selected_color|default:'Sin color' }} · Talla {{ row.first_item.selected_size|default:'N/A' }} · x{{ row.first_item.quantity }}</p>{% endif %}
+            {% if not patient_mode %}<small>Cliente: {{ row.customer_name }}</small>{% endif %}
+          </div>
+          <strong class="order-card-v3__total">{{ row.order.total|money }}</strong>
+        </div>
+
+        <div class="order-track-v3" aria-label="Progreso del pedido: {{ row.order.status|status_label }}">
+          {% for i in '1234' %}
+            <div class="order-track-v3__step {% if forloop.counter < step %}is-done{% elif forloop.counter == step %}is-current{% endif %}">
+              <span>{% if forloop.counter < step %}<i data-lucide="check"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
+              <small>{% if forloop.counter == 1 %}Confirmado{% elif forloop.counter == 2 %}Producción{% elif forloop.counter == 3 %}Enviado{% else %}Entregado{% endif %}</small>
+            </div>
+          {% endfor %}
+        </div>
+      </a>
+    {% endwith %}{% empty %}
+      <article class="orders-board-v3__empty">
+        <i data-lucide="package-search"></i>
+        <strong>{% if patient_mode %}Aún no tienes pedidos{% else %}No se encontraron pedidos{% endif %}</strong>
+        {% if patient_mode %}<a class="btn btn-primary" href="{% url 'patient_store' %}">Comprar pulsera</a>{% else %}<span>Prueba otra búsqueda o filtro.</span>{% endif %}
+      </article>
+    {% endfor %}
+  </div>
+</section>

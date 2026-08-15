@@ -1,0 +1,74 @@
+{% load static panel_extras %}
+<!doctype html>
+<html lang="es" data-theme="{{ admin_profile.preferences.theme|default:'light' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Panel{% endblock %} · QRMed Emergency</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260814-18">
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="{% url 'dashboard' %}">
+      <span class="brand-mark"><i data-lucide="qr-code"></i></span>
+      <span class="brand-name">QRMed Emergency</span>
+    </a>
+    <nav class="side-nav">
+      <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"><i data-lucide="house"></i><span>Inicio</span></a>
+      <a href="{% url 'patients' %}" class="{% if 'patient' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="users"></i><span>Pacientes</span></a>
+      <a href="{% url 'payments' %}" class="{% if 'payment' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="clipboard-check"></i><span>Validar pagos</span></a>
+      <a href="{% url 'products' %}" class="{% if 'product' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="boxes"></i><span>Productos</span></a>
+      <a href="{% url 'orders' %}" class="{% if 'order' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="package"></i><span>Pedidos</span></a>
+      <a href="{% url 'users' %}" class="{% if request.resolver_match.url_name == 'users' %}active{% endif %}"><i data-lucide="user-cog"></i><span>Usuarios</span></a>
+      <a href="{% url 'profile' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="user-round"></i><span>Perfil</span></a>
+      <a href="{% url 'banks' %}" class="{% if 'bank' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="landmark"></i><span>Bancos y cuentas</span></a>
+      <a href="{% url 'configuration' %}" class="{% if request.resolver_match.url_name == 'configuration' %}active{% endif %}"><i data-lucide="settings"></i><span>Configuración</span></a>
+    </nav>
+    <a class="logout-link" href="{% url 'logout' %}"><i data-lucide="log-out"></i><span>Cerrar sesión</span></a>
+  </aside>
+
+  <header class="topbar">
+    <button class="icon-button" id="menuButton" aria-label="Abrir menú"><i data-lucide="menu"></i></button>
+    <div class="global-search">
+      <i data-lucide="search"></i>
+      <input id="globalSearch" autocomplete="off" placeholder="Buscar en el panel...">
+      <div class="search-results" id="searchResults"></div>
+    </div>
+    <div class="top-actions">
+      <button class="icon-button notification-button" aria-label="Notificaciones"><i data-lucide="bell"></i><span></span></button>
+      <button class="profile-trigger" id="profileTrigger">
+        {% if admin_avatar_url %}<img src="{{ admin_avatar_url }}" alt="Foto de perfil" data-avatar-fallback><span class="avatar-placeholder" hidden><i data-lucide="user-round"></i></span>{% else %}<span class="avatar-placeholder"><i data-lucide="user-round"></i></span>{% endif %}
+        <i data-lucide="chevron-down"></i>
+      </button>
+      <div class="profile-menu" id="profileMenu">
+        <strong>{{ admin_profile.full_name|default:'Administrador' }}</strong>
+        <small>Administrador</small>
+        <hr>
+        <a href="{% url 'profile' %}"><i data-lucide="user-round"></i> Mi perfil</a>
+        <a class="danger-text" href="{% url 'logout' %}"><i data-lucide="log-out"></i> Cerrar sesión</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    {% if demo_mode %}<div class="demo-banner"><i data-lucide="flask-conical"></i> Modo demostración activo</div>{% endif %}
+    {% if messages %}<div class="toast-stack">{% for message in messages %}<div class="toast {{ message.tags }}">{{ message }}<button onclick="this.parentElement.remove()">×</button></div>{% endfor %}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <div class="confirm-dialog" id="confirmDialog" hidden>
+    <div class="confirm-card">
+      <div class="confirm-icon"><i data-lucide="triangle-alert"></i></div>
+      <h3 id="confirmTitle">¿Confirmar acción?</h3>
+      <p id="confirmText">Esta acción puede modificar información.</p>
+      <div class="button-row"><button class="btn btn-muted" data-confirm-cancel>Cancelar</button><button class="btn btn-danger" data-confirm-ok>Confirmar</button></div>
+    </div>
+  </div>
+  <script src="{% static 'panel/vendor/lucide.min.js' %}"></script>
+  <script src="{% static 'panel/js/app.js' %}?v=20260814-18"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

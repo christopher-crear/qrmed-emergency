@@ -1,0 +1,81 @@
+{% load panel_extras %}
+<section class="modern-profile-page">
+  <div class="profile-cover-modern{% if not profile_cover_url %} profile-cover-gradient{% endif %}"{% if profile_cover_url %} style="background-image:linear-gradient(90deg,rgba(5,18,42,.08),rgba(5,18,42,.2)),url('{{ profile_cover_url }}')"{% endif %}>
+    <button type="button" class="profile-cover-button" data-pick-cover><i data-lucide="camera"></i>Cambiar portada</button>
+  </div>
+
+  <div class="profile-hero-actions">
+    <div class="profile-photo-wrap">
+      {% if profile_avatar_url %}
+        <img id="profileAvatarPreview" src="{{ profile_avatar_url }}" alt="Foto de {{ profile_display_name }}" data-avatar-fallback>
+        <span class="profile-photo-fallback profile-initials" hidden>{{ profile_display_name|initials }}</span>
+      {% else %}
+        <img id="profileAvatarPreview" alt="Foto de {{ profile_display_name }}" hidden>
+        <span class="profile-photo-fallback profile-initials">{{ profile_display_name|initials }}</span>
+      {% endif %}
+      <button type="button" data-pick-avatar aria-label="Cambiar fotografía"><i data-lucide="camera"></i></button>
+    </div>
+    <button type="button" class="profile-edit-toggle" data-profile-edit><i data-lucide="pencil"></i>Editar perfil</button>
+  </div>
+
+  <form class="profile-edit-panel" id="profileEditPanel" method="post" action="{{ profile_edit_action }}" enctype="multipart/form-data" hidden>
+    {% csrf_token %}
+    <header>
+      <div><span class="section-eyebrow">INFORMACIÓN DE LA CUENTA</span><h2>Editar información personal</h2></div>
+      <button type="button" data-profile-cancel><i data-lucide="x"></i>Cancelar</button>
+    </header>
+    {% if profile_form.errors %}<div class="form-alert">Revisa los campos marcados antes de guardar.</div>{% endif %}
+    <div class="profile-edit-grid">
+      <div><label for="{{ profile_form.full_name.id_for_label }}">Nombre completo</label>{{ profile_form.full_name }}</div>
+      <div><label for="{{ profile_form.phone.id_for_label }}">Teléfono</label>{{ profile_form.phone }}</div>
+      <div><label for="{{ profile_form.city.id_for_label }}">Ciudad</label>{{ profile_form.city }}</div>
+      <div><label for="{{ profile_form.specialty.id_for_label }}">{{ profile_specialty_label }}</label>{{ profile_form.specialty }}</div>
+    </div>
+    <div class="profile-hidden-files">{{ profile_form.avatar }}{{ profile_form.cover }}</div>
+    <footer>
+      <span>Los cambios se guardarán directamente en tu perfil.</span>
+      <button class="btn btn-primary"><i data-lucide="save"></i>Guardar perfil</button>
+    </footer>
+  </form>
+
+  <div class="profile-content-grid">
+    <div class="profile-main-column">
+      <article class="profile-modern-card personal-card">
+        <header><span class="profile-card-icon blue"><i data-lucide="user-round"></i></span><div><span class="section-eyebrow">PERFIL</span><h2>Información personal</h2></div></header>
+        <div class="profile-person-name"><h3>{{ profile_display_name }}</h3><span><i data-lucide="{{ profile_role_icon }}"></i>{{ profile_role_label }}</span></div>
+        <div class="profile-contact-grid">
+          <div><span><i data-lucide="mail"></i></span><p><small>Correo electrónico</small><strong>{{ profile_email|default:'Sin correo registrado' }}</strong></p></div>
+          <div><span><i data-lucide="phone"></i></span><p><small>Teléfono</small><strong>{{ profile_phone|default:'Sin teléfono registrado' }}</strong></p></div>
+          <div><span><i data-lucide="map-pin"></i></span><p><small>Ciudad</small><strong>{{ profile_city|default:'Sin ciudad registrada' }}</strong></p></div>
+          <div><span><i data-lucide="briefcase"></i></span><p><small>{{ profile_specialty_label }}</small><strong>{{ profile_specialty }}</strong></p></div>
+        </div>
+      </article>
+
+      <form class="profile-modern-card password-modern-card" method="post" action="{{ profile_password_action }}">
+        {% csrf_token %}
+        <header><span class="profile-card-icon purple"><i data-lucide="lock-keyhole"></i></span><div><span class="section-eyebrow">SEGURIDAD</span><h2>Cambiar contraseña</h2></div></header>
+        <div class="password-field"><label>Contraseña actual</label><div><i data-lucide="lock"></i><input type="password" name="current_password" required autocomplete="current-password"><button type="button" data-toggle-password aria-label="Mostrar contraseña"><i data-lucide="eye"></i></button></div></div>
+        <div class="password-two-columns">
+          <div class="password-field"><label>Nueva contraseña</label><div><i data-lucide="key-round"></i><input type="password" name="new_password" minlength="8" required autocomplete="new-password"><button type="button" data-toggle-password aria-label="Mostrar contraseña"><i data-lucide="eye"></i></button></div><small>Mínimo 8 caracteres</small></div>
+          <div class="password-field"><label>Confirmar contraseña</label><div><i data-lucide="key-round"></i><input type="password" name="confirm_password" minlength="8" required autocomplete="new-password"><button type="button" data-toggle-password aria-label="Mostrar contraseña"><i data-lucide="eye"></i></button></div></div>
+        </div>
+        <footer><button class="btn btn-primary"><i data-lucide="shield-check"></i>Actualizar contraseña</button></footer>
+      </form>
+    </div>
+
+    <aside class="profile-side-column">
+      <article class="profile-modern-card activity-modern-card">
+        <header><span class="profile-card-icon green"><i data-lucide="chart-line"></i></span><div><span class="section-eyebrow">RESUMEN</span><h2>Actividad</h2></div></header>
+        <div><span>{{ profile_metric_primary_label }}</span><strong>{{ profile_metric_primary }}</strong></div>
+        <div><span>{{ profile_metric_qr_label }}</span><strong>{{ profile_metric_qr }}</strong></div>
+        <div><span>Pedidos realizados</span><strong>{{ profile_metric_orders }}</strong></div>
+        <div><span>Miembro desde</span><strong>{{ profile_member_since|date:'M Y'|default:'—' }}</strong></div>
+      </article>
+      <article class="profile-modern-card danger-modern-card">
+        <span class="profile-card-icon red"><i data-lucide="triangle-alert"></i></span>
+        <h2>Zona de peligro</h2><p>{{ profile_danger_text }}</p>
+        <button type="button" disabled><i data-lucide="trash-2"></i>{% if profile_role_label == 'Paciente' %}Solicitar eliminación{% else %}Eliminar cuenta{% endif %}</button>
+      </article>
+    </aside>
+  </div>
+</section>

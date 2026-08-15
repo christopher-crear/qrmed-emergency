@@ -1,0 +1,27 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingresar · QRMed Emergency</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}">
+</head>
+<body class="login-body login-shared">
+  <section class="login-panel">
+    <form method="post" class="login-card">{% csrf_token %}
+      <div class="mobile-login-logo"><span class="login-logo"><i data-lucide="qr-code"></i></span> QRMed Emergency</div>
+      <span class="sr-only">Bienvenido de nuevo</span><h2>Bienvenido de vuelta</h2><p class="muted">Ingresa con tu cuenta de administrador o paciente</p>
+      {% if messages %}{% for message in messages %}<div class="alert error">{{ message }}</div>{% endfor %}{% endif %}
+      {% if demo_mode %}<div class="alert info"><strong>Acceso de prueba</strong><br>admin@qrmed.ec · admin123</div>{% endif %}
+      <label>Correo electrónico</label><div class="input-icon"><i data-lucide="mail"></i><input type="email" name="email" value="{% if demo_mode %}admin@qrmed.ec{% endif %}" required placeholder="tu@correo.com"></div>
+      <label>Contraseña</label><div class="input-icon"><i data-lucide="lock-keyhole"></i><input id="loginPassword" type="password" name="password" value="{% if demo_mode %}admin123{% endif %}" required><button type="button" aria-label="Mostrar contraseña" onclick="const e=document.getElementById('loginPassword');e.type=e.type==='password'?'text':'password'"><i data-lucide="eye"></i></button></div>
+      <div class="login-options"><label><input type="checkbox" name="remember" checked> Recordarme</label><span>¿Olvidaste tu contraseña?</span></div>
+      <button class="btn btn-primary btn-large" type="submit">Iniciar sesión</button>
+      <small class="login-help">El sistema te llevará automáticamente al panel correspondiente a tu rol.</small>
+    </form>
+  </section>
+  <section class="login-visual"><div class="login-qr-art"><i data-lucide="qr-code"></i></div><div class="login-copy"><h1>Siempre preparado</h1><p>Tu código QR único conecta a cualquier médico con tu ficha de emergencia en segundos.</p><div class="blood-chips"><b>O+</b><b>A+</b><b>B−</b><b>AB+</b></div></div></section>
+  <script src="{% static 'panel/vendor/lucide.min.js' %}"></script><script>lucide.createIcons()</script>
+</body></html>

@@ -1,0 +1,8 @@
+{% extends 'panel/user_base.html' %}
+{% block title %}{{ order.order_number }}{% endblock %}
+{% block content %}
+  <div class="orders-modal-underlay">
+    {% include 'panel/partials/orders_content.html' with rows=list_rows orders_total=list_orders_total q=list_q patient_mode=True %}
+  </div>
+  {% include 'panel/partials/order_modal.html' with patient_mode=True %}
+{% endblock %}

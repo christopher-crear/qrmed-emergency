@@ -1,0 +1,28 @@
+{% extends 'panel/base.html' %}{% load panel_extras %}
+{% block title %}Pacientes{% endblock %}
+{% block content %}
+<section class="patients-shell">
+  <header class="patients-heading">
+    <div><h1>Pacientes</h1><p>{{ total_patients }} registros médicos</p></div>
+    <div class="patients-heading-actions">
+      <a class="btn btn-outline patient-head-btn" href="{% url 'patients_export' %}"><i data-lucide="download"></i> Exportar</a>
+      <a class="btn btn-primary patient-head-btn" href="{% url 'patient_create' %}"><i data-lucide="plus"></i> Nuevo paciente</a>
+    </div>
+  </header>
+  <form class="patient-toolbar" method="get">
+    <div class="patient-search"><i data-lucide="search"></i><input name="q" value="{{ q }}" placeholder="Buscar por nombre, identificación, ciudad o correo..."></div>
+    <input type="hidden" name="status" value="{{ current_status }}">
+    <div class="patient-filters"><a class="{% if current_status == 'all' %}active{% endif %}" href="?q={{ q|urlencode }}&status=all">Todos</a><a class="{% if current_status == 'active' %}active{% endif %}" href="?q={{ q|urlencode }}&status=active">Activos</a><a class="{% if current_status == 'inactive' %}active{% endif %}" href="?q={{ q|urlencode }}&status=inactive">Inactivos</a></div>
+  </form>
+  <article class="card patients-table-card"><div class="patients-table-wrap"><table class="patients-table">
+    <thead><tr><th>Paciente</th><th>Identificación</th><th>Sangre</th><th>Ciudad</th><th>Estado</th><th>QR</th><th>Acciones</th></tr></thead>
+    <tbody>{% for patient in patients %}<tr>
+      <td><div class="patient-cell">{% if patient.account_avatar_url %}<img class="patient-avatar" src="{{ patient.account_avatar_url }}" alt="Foto de perfil de {{ patient.full_name }}" loading="lazy" data-avatar-fallback><span class="patient-avatar avatar-placeholder" hidden><i data-lucide="user-round"></i></span>{% else %}<span class="patient-avatar avatar-placeholder"><i data-lucide="user-round"></i></span>{% endif %}<span><strong>{{ patient.full_name }}</strong><small>{{ patient.email|default:'Sin correo electrónico' }}</small></span></div></td>
+      <td>{{ patient.id_number }}</td><td><span class="blood-pill"><i data-lucide="flame"></i>{{ patient.blood_type|default:'—' }}</span></td><td>{{ patient.city|default:'—' }}</td><td><span class="patient-status {% if patient.status == 'active' %}active{% else %}inactive{% endif %}">{{ patient.status|status_label }}</span></td>
+      <td><button type="button" class="qr-thumbnail" data-open-qr data-name="{{ patient.full_name }}" data-token="{{ patient.qr_token }}" data-image="{% url 'patient_qr_image' patient.id %}" data-public="{% url 'public_patient' patient.qr_token %}"><img src="{% url 'patient_qr_image' patient.id %}" alt="QR de {{ patient.full_name }}"></button></td>
+      <td><div class="patient-actions"><a title="Ver paciente" href="{% url 'patient_detail' patient.id %}"><i data-lucide="eye"></i></a><a title="Editar paciente" href="{% url 'patient_edit' patient.id 1 %}"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'patient_delete' patient.id %}">{% csrf_token %}<button type="button" class="delete" data-confirm="Se eliminará la ficha médica de {{ patient.full_name }}." data-confirm-title="¿Eliminar paciente?"><i data-lucide="trash-2"></i></button></form></div></td>
+    </tr>{% empty %}<tr><td colspan="7"><div class="empty-mini">No se encontraron pacientes con estos filtros.</div></td></tr>{% endfor %}</tbody>
+  </table></div></article>
+</section>
+{% include 'panel/partials/qr_modal.html' %}
+{% endblock %}

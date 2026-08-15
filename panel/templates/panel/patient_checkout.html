@@ -1,0 +1,155 @@
+{% extends 'panel/user_base.html' %}{% load panel_extras %}
+{% block title %}Finalizar pedido{% endblock %}
+{% block content %}
+<div class="patient-page checkout-page checkout-flow" data-checkout-flow>
+  <header class="checkout-heading">
+    <a class="back-link" href="{% url 'patient_cart' %}"><i data-lucide="arrow-left"></i> Volver al carrito</a>
+    <h1>Finalizar pedido</h1>
+  </header>
+
+  <div class="checkout-steps" aria-label="Progreso del pedido">
+    <div class="active" data-step-indicator="1"><b>1</b><span>Envío</span></div><i data-lucide="chevron-right"></i>
+    <div data-step-indicator="2"><b>2</b><span>Método de pago</span></div><i data-lucide="chevron-right"></i>
+    <div data-step-indicator="3"><b>3</b><span>Confirmación</span></div>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="checkout-layout" id="checkoutForm">
+    {% csrf_token %}
+    <div class="checkout-panels">
+      <section class="patient-card checkout-panel" data-checkout-panel="1">
+        <h2><i data-lucide="map-pin"></i> Dirección de envío</h2>
+        <div class="shipping-form">
+          <label class="span-2">Nombre completo<input type="text" name="shipping_name" value="{{ shipping.name }}" required autocomplete="name"></label>
+          <label class="span-2">Dirección<input type="text" name="shipping_address" value="{{ shipping.address }}" required autocomplete="street-address"></label>
+          <label>Ciudad<input type="text" name="shipping_city" value="{{ shipping.city }}" required autocomplete="address-level2"></label>
+          <label>Código postal<input type="text" name="shipping_postal" value="{{ shipping.postal }}" autocomplete="postal-code"></label>
+          <label class="span-2">Teléfono de contacto<input type="tel" name="shipping_phone" value="{{ shipping.phone }}" required autocomplete="tel"></label>
+        </div>
+        <button class="btn btn-primary checkout-next" type="button" data-next-step="2">Continuar al método de pago <i data-lucide="arrow-right"></i></button>
+      </section>
+
+      <section class="patient-card checkout-panel" data-checkout-panel="2" hidden>
+        <h2><i data-lucide="credit-card"></i> Método de pago</h2>
+        <div class="payment-options">
+          <label><input type="radio" name="payment_method" value="transfer" {% if selected_payment_method != 'deposit' %}checked{% endif %}><span><i data-lucide="arrow-right"></i><strong>Transferencia bancaria</strong><small>Transfiere desde tu banco o aplicación móvil con QR.</small><em>✓ Seleccionado</em></span></label>
+          <label><input type="radio" name="payment_method" value="deposit" {% if selected_payment_method == 'deposit' %}checked{% endif %}><span><i data-lucide="package"></i><strong>Depósito bancario</strong><small>Deposita en ventanilla o cajero automático.</small><em>✓ Seleccionado</em></span></label>
+        </div>
+        <h3 class="checkout-divider">DATOS BANCARIOS</h3>
+        {% if bank_accounts %}
+          <div class="checkout-bank-selector" aria-label="Selecciona la cuenta bancaria">
+            {% for bank in bank_accounts %}
+              <label>
+                <input type="radio" name="bank_account" value="{{ bank.id }}" {% if selected_bank and bank.id == selected_bank.id %}checked{% endif %}>
+                <span>
+                  <span class="checkout-bank-logo">{% if bank.logo_url %}<img src="{{ bank.logo_url }}" alt="Logo {{ bank.bank_name }}">{% else %}<i data-lucide="landmark"></i>{% endif %}</span>
+                  <span><strong>{{ bank.bank_name }}</strong><small>{{ bank.account_type }} · Cuenta {{ bank.account_number|slice:"-4:" }}</small></span>
+                  <i data-lucide="circle-check"></i>
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+          {% for bank in bank_accounts %}
+            <div class="checkout-bank-panel" data-bank-panel="{{ bank.id }}" {% if not selected_bank or bank.id != selected_bank.id %}hidden{% endif %}>
+              <dl class="bank-details">
+                <div><dt>Banco</dt><dd>{{ bank.bank_name }}</dd></div>
+                <div><dt>Tipo de cuenta</dt><dd>{{ bank.account_type }}</dd></div>
+                <div><dt>Número de cuenta</dt><dd>{{ bank.account_number }}</dd></div>
+                <div><dt>Titular</dt><dd>{{ bank.account_holder }}</dd></div>
+                <div><dt>RUC / Identificación</dt><dd>{{ bank.tax_id }}</dd></div>
+                <div class="amount"><dt data-payment-amount-label>Monto a transferir</dt><dd>{{ cart_total|money }} USD</dd></div>
+              </dl>
+              {% if bank.instructions %}<p class="checkout-bank-instructions"><i data-lucide="info"></i>{{ bank.instructions }}</p>{% endif %}
+              {% if bank.qr_url %}<div class="bank-qr" data-transfer-only><h3><i data-lucide="qr-code"></i> Código QR de transferencia</h3><img src="{{ bank.qr_url }}" alt="Código QR de {{ bank.bank_name }}"><p>Escanea este código desde la aplicación de tu banco. Luego carga el comprobante para validar el pedido.</p></div>{% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <dl class="bank-details">
+            <div><dt>Banco</dt><dd>{{ payment.bank_name|default:'No configurado' }}</dd></div>
+            <div><dt>Tipo de cuenta</dt><dd>{{ payment.account_type|default:'—' }}</dd></div>
+            <div><dt>Número de cuenta</dt><dd>{{ payment.account_number|default:'—' }}</dd></div>
+            {% if payment.interbank_code %}<div data-transfer-only><dt>Cuenta interbancaria (CCI)</dt><dd>{{ payment.interbank_code }}</dd></div>{% endif %}
+            <div><dt>Titular</dt><dd>{{ payment.account_holder|default:'—' }}</dd></div>
+            <div><dt>RUC / Identificación</dt><dd>{{ payment.tax_id|default:'—' }}</dd></div>
+            {% if payment.notification_email %}<div data-transfer-only><dt>Correo de notificaciones</dt><dd>{{ payment.notification_email }}</dd></div>{% endif %}
+            <div class="amount"><dt data-payment-amount-label>Monto a transferir</dt><dd>{{ cart_total|money }} USD</dd></div>
+          </dl>
+        {% endif %}
+        <div class="proof-group">
+          <h3><i data-lucide="upload"></i> <span data-proof-heading>Comprobante de transferencia</span></h3>
+          <label class="proof-upload"><i data-lucide="upload"></i><strong>Subir comprobante de pago</strong><small>Arrastra o haz clic · JPG, PNG, WebP o PDF · máx. 10 MB</small><span data-proof-name>Ningún archivo seleccionado</span><input type="file" name="proof" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
+        </div>
+        <div class="checkout-buttons"><button class="btn" type="button" data-next-step="1"><i data-lucide="arrow-left"></i> Cambiar datos</button><button class="btn btn-primary" type="button" data-next-step="3">Revisar pedido <i data-lucide="arrow-right"></i></button></div>
+      </section>
+
+      <section class="patient-card checkout-panel checkout-confirm" data-checkout-panel="3" hidden>
+        <h2><i data-lucide="circle-check"></i> Confirmar pedido</h2>
+        <article><h3>Dirección de envío</h3><p><strong data-review-name>{{ shipping.name }}</strong><br><span data-review-address>{{ shipping.address }}, {{ shipping.city }} {{ shipping.postal }}</span></p></article>
+        <article><h3>Método de pago</h3><p class="review-method"><i data-lucide="credit-card"></i><strong data-review-method>Transferencia bancaria</strong></p></article>
+        <article><h3>Comprobante adjunto</h3><p class="review-proof"><i data-lucide="circle-check"></i><span><strong data-review-proof>Selecciona un archivo</strong><small>Se enviará para validación</small></span><em>Pendiente de validación</em></p></article>
+        <div class="checkout-warning"><i data-lucide="info"></i><span>Tu pedido quedará con estado</span><strong>Pago pendiente de validación</strong></div>
+        <div class="checkout-buttons"><button class="btn" type="button" data-next-step="2"><i data-lucide="arrow-left"></i> Atrás</button><button class="btn btn-primary" type="submit"><i data-lucide="check"></i> Enviar pedido</button></div>
+      </section>
+    </div>
+
+    <aside class="patient-card checkout-summary">
+      <h2>Resumen del pedido</h2>
+      {% for row in cart_rows %}<div class="checkout-product">{% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}">{% else %}<span class="checkout-product-placeholder"><i data-lucide="package"></i></span>{% endif %}<span><strong>{{ row.product.name }}</strong><small>{{ row.color }} · {{ row.size }} · x{{ row.quantity }}</small></span><b>{{ row.line_total|money }}</b></div>{% endfor %}
+      <hr><div><span>Subtotal</span><b>{{ cart_total|money }}</b></div><div><span>Envío</span><b class="green-text">Gratis</b></div><div class="total"><span>Total</span><b>{{ cart_total|money }}</b></div>
+      <p data-summary-method><i data-lucide="credit-card"></i><span data-summary-method-text>Transferencia bancaria</span></p><p><i data-lucide="clock"></i> Entrega estimada: 5–8 días hábiles tras confirmar el pago</p>
+    </aside>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  const flow = document.querySelector('[data-checkout-flow]');
+  if (!flow) return;
+  const form = document.getElementById('checkoutForm');
+  const panels = [...flow.querySelectorAll('[data-checkout-panel]')];
+  const indicators = [...flow.querySelectorAll('[data-step-indicator]')];
+  const proof = form.elements.proof;
+  const methodInputs = [...form.querySelectorAll('[name="payment_method"]')];
+  const bankInputs = [...form.querySelectorAll('[name="bank_account"]')];
+  const showStep = step => {
+    panels.forEach(panel => panel.hidden = Number(panel.dataset.checkoutPanel) !== step);
+    indicators.forEach(indicator => {
+      const value = Number(indicator.dataset.stepIndicator);
+      indicator.classList.toggle('active', value === step);
+      indicator.classList.toggle('done', value < step);
+      indicator.querySelector('b').textContent = value < step ? '✓' : value;
+    });
+    if (step === 3) updateReview();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  };
+  const currentMethod = () => methodInputs.find(input => input.checked)?.value || 'transfer';
+  const updateMethod = () => {
+    const transfer = currentMethod() === 'transfer';
+    flow.querySelectorAll('[data-transfer-only]').forEach(node => node.hidden = !transfer);
+    flow.querySelectorAll('[data-payment-amount-label]').forEach(node => node.textContent = transfer ? 'Monto a transferir' : 'Monto a depositar');
+    flow.querySelector('[data-proof-heading]').textContent = transfer ? 'Comprobante de transferencia' : 'Comprobante de depósito';
+    flow.querySelector('[data-summary-method-text]').textContent = transfer ? 'Transferencia bancaria' : 'Depósito bancario';
+  };
+  const updateBank = () => {
+    const selected = bankInputs.find(input => input.checked)?.value;
+    flow.querySelectorAll('[data-bank-panel]').forEach(panel => panel.hidden = panel.dataset.bankPanel !== selected);
+    updateMethod();
+  };
+  const updateReview = () => {
+    flow.querySelector('[data-review-name]').textContent = form.elements.shipping_name.value.trim();
+    flow.querySelector('[data-review-address]').textContent = [form.elements.shipping_address.value, form.elements.shipping_city.value, form.elements.shipping_postal.value].filter(Boolean).join(', ');
+    flow.querySelector('[data-review-method]').textContent = currentMethod() === 'transfer' ? 'Transferencia bancaria' : 'Depósito bancario';
+    flow.querySelector('[data-review-proof]').textContent = proof.files[0]?.name || 'Selecciona un archivo';
+  };
+  flow.querySelectorAll('[data-next-step]').forEach(button => button.addEventListener('click', () => {
+    const target = Number(button.dataset.nextStep);
+    if (target === 2 && ![form.elements.shipping_name, form.elements.shipping_address, form.elements.shipping_city, form.elements.shipping_phone].every(input => input.reportValidity())) return;
+    if (target === 3 && !proof.reportValidity()) return;
+    showStep(target);
+  }));
+  methodInputs.forEach(input => input.addEventListener('change', updateMethod));
+  bankInputs.forEach(input => input.addEventListener('change', updateBank));
+  proof.addEventListener('change', () => flow.querySelector('[data-proof-name]').textContent = proof.files[0]?.name || 'Ningún archivo seleccionado');
+  updateMethod();
+  updateBank();
+})();
+</script>{% endblock %}

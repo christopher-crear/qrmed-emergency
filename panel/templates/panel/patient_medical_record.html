@@ -1,0 +1,5 @@
+{% extends 'panel/user_base.html' %}
+{% block title %}Mi ficha médica{% endblock %}
+{% block content %}
+  {% include 'panel/partials/patient_editor.html' with editor_mode='patient' editor_title='Mi ficha médica' patient_record=session_patient %}
+{% endblock %}

@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: qrmed-django-admin
+    runtime: python
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /health/
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: DEMO_MODE
+        value: "False"
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_PATIENT_BUCKET
+        value: patient-photos
+      - key: SUPABASE_PAYMENT_BUCKET
+        value: payment-proofs
+      - key: SUPABASE_PROFILE_BUCKET
+        value: profile-images
+      - key: SUPABASE_BANK_BUCKET
+        value: bank-assets

@@ -1,0 +1,5 @@
+{% extends 'panel/user_base.html' %}
+{% block title %}Mis pedidos{% endblock %}
+{% block content %}
+  {% include 'panel/partials/orders_content.html' with patient_mode=True %}
+{% endblock %}

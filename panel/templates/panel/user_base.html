@@ -1,0 +1,48 @@
+{% load static panel_extras %}
+<!doctype html>
+<html lang="es" data-theme="{{ session_profile.preferences.theme|default:'light' }}">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Mi panel{% endblock %} · QRMed Emergency</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260814-18">
+</head>
+<body class="patient-app" data-search-url="{% url 'patient_global_search' %}">
+  <aside class="sidebar patient-sidebar" id="sidebar">
+    <a class="brand" href="{% url 'patient_dashboard' %}"><span class="brand-mark"><i data-lucide="qr-code"></i></span><span class="brand-name">QRMed Emergency</span></a>
+    <div class="patient-nav-profile">
+      {% if session_avatar_url %}<img src="{{ session_avatar_url }}" alt="Foto de {{ session_patient.full_name }}" data-avatar-fallback><span class="avatar-placeholder initials-avatar" hidden aria-label="Iniciales de {{ session_patient.full_name }}">{{ session_patient.full_name|initials }}</span>{% else %}<span class="avatar-placeholder initials-avatar" aria-label="Iniciales de {{ session_patient.full_name }}">{{ session_patient.full_name|initials }}</span>{% endif %}
+      <span><strong>{{ session_patient.full_name|truncatechars:22 }}</strong><small>Paciente · {{ session_patient.blood_type|default:'—' }}</small></span>
+    </div>
+    <nav class="side-nav">
+      <a href="{% url 'patient_dashboard' %}" class="{% if request.resolver_match.url_name == 'patient_dashboard' %}active{% endif %}"><i data-lucide="house"></i><span>Inicio</span></a>
+      <a href="{% url 'patient_credential' %}" class="{% if request.resolver_match.url_name == 'patient_credential' %}active{% endif %}"><i data-lucide="contact"></i><span>Mi Credencial</span></a>
+      <a href="{% url 'patient_store' %}" class="{% if request.resolver_match.url_name == 'patient_store' %}active{% endif %}"><i data-lucide="shopping-bag"></i><span>Comprar Pulsera</span></a>
+      <a href="{% url 'patient_cart' %}" class="{% if 'cart' in request.resolver_match.url_name or 'checkout' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="shopping-cart"></i><span>Carrito</span>{% if cart_count %}<b class="nav-count">{{ cart_count }}</b>{% endif %}</a>
+      <a href="{% url 'patient_medical_record' 1 %}" class="{% if request.resolver_match.url_name == 'patient_medical_record' %}active{% endif %}"><i data-lucide="notebook-tabs"></i><span>Mi Ficha Médica</span></a>
+      <a href="{% url 'patient_orders' %}" class="{% if 'patient_order' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="package"></i><span>Mis Pedidos</span></a>
+      <a href="{% url 'patient_profile' %}" class="{% if 'patient_profile' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="user-round"></i><span>Perfil</span></a>
+      <a href="{% url 'patient_configuration' %}" class="{% if request.resolver_match.url_name == 'patient_configuration' %}active{% endif %}"><i data-lucide="settings"></i><span>Configuración</span></a>
+    </nav>
+    <a class="logout-link" href="{% url 'logout' %}"><i data-lucide="log-out"></i><span>Cerrar sesión</span></a>
+  </aside>
+  <header class="topbar">
+    <button class="icon-button" id="menuButton" aria-label="Alternar menú"><i data-lucide="menu"></i></button>
+    <div class="global-search"><i data-lucide="search"></i><input id="globalSearch" autocomplete="off" placeholder="Buscar en el panel..."><div class="search-results" id="searchResults"></div></div>
+    <div class="top-actions">
+      <a class="icon-button patient-cart-top" href="{% url 'patient_cart' %}" aria-label="Carrito"><i data-lucide="shopping-bag"></i>{% if cart_count %}<b>{{ cart_count }}</b>{% endif %}</a>
+      <button class="icon-button notification-button" aria-label="Notificaciones"><i data-lucide="bell"></i><span></span></button>
+      <button class="profile-trigger" id="profileTrigger">
+        {% if session_avatar_url %}<img src="{{ session_avatar_url }}" alt="Foto de {{ session_patient.full_name }}" data-avatar-fallback><span class="avatar-placeholder initials-avatar" hidden>{{ session_patient.full_name|initials }}</span>{% else %}<span class="avatar-placeholder initials-avatar">{{ session_patient.full_name|initials }}</span>{% endif %}<i data-lucide="chevron-down"></i>
+      </button>
+      <div class="profile-menu" id="profileMenu"><strong>{{ session_patient.full_name }}</strong><small>Paciente · {{ session_patient.blood_type }}</small><hr><a href="{% url 'patient_profile' %}"><i data-lucide="user-round"></i> Mi perfil</a><a class="danger-text" href="{% url 'logout' %}"><i data-lucide="log-out"></i> Cerrar sesión</a></div>
+    </div>
+  </header>
+  <main class="main-content patient-content">
+    {% if messages %}<div class="toast-stack">{% for message in messages %}<div class="toast {{ message.tags }}">{{ message }}<button onclick="this.parentElement.remove()">×</button></div>{% endfor %}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <script defer src="{% static 'panel/vendor/lucide.min.js' %}"></script><script defer src="{% static 'panel/js/app.js' %}?v=20260814-18"></script>{% block scripts %}{% endblock %}
+</body></html>
