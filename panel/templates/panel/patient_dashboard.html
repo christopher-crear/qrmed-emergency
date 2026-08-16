@@ -16,7 +16,17 @@
     <a href="{% url 'patient_orders' %}"><span class="shortcut-icon green"><i data-lucide="package"></i></span><em>{{ orders_count }} pedidos</em><h2>Mis Pedidos</h2><p>Historial y seguimiento</p><b>Ir ahora <i data-lucide="arrow-right"></i></b></a>
   </section>
   <section class="patient-dashboard-bottom">
-    <article class="patient-card credential-preview"><header><h2>Mi Credencial</h2><a href="{% url 'patient_credential' %}">Ver completa <i data-lucide="arrow-right"></i></a></header><div class="medical-card-front"><div class="medical-card-brand"><i data-lucide="qr-code"></i> QRMed Emergency <span>Activa</span></div><div><h3>{{ session_patient.full_name|truncatechars:28 }}</h3><p>ID: {{ session_patient.id_number }}</p><b>{{ session_patient.blood_type }}</b></div><img src="{% url 'patient_credential_qr' %}" alt="QR médico"></div></article>
+    <article class="patient-card credential-preview">
+      <header>
+        <h2>Mi Credencial</h2>
+        <a href="{% url 'patient_credential' %}">Ver completa <i data-lucide="arrow-right"></i></a>
+      </header>
+      <a class="dashboard-credential-link" href="{% url 'patient_credential' %}" aria-label="Abrir mi credencial médica">
+        <span class="dashboard-credential-frame">
+          {% include 'panel/partials/patient_credential_card.html' with side='front' %}
+        </span>
+      </a>
+    </article>
     <article class="patient-card recent-user-orders"><header><h2>Pedidos recientes</h2><a href="{% url 'patient_orders' %}">Ver todos <i data-lucide="arrow-right"></i></a></header>{% for row in recent_orders %}<a href="{% url 'patient_order_detail' row.order.id %}"><span><i data-lucide="package"></i></span><div><strong>{{ row.order.order_number }}</strong><small>{{ row.order.created_at|date:'d/m/Y' }} · {{ row.order.total|money }}</small></div><em>{{ row.order.status|status_label }}</em></a>{% empty %}<div class="empty-mini">Todavía no tienes pedidos.</div>{% endfor %}</article>
   </section>
 </div>

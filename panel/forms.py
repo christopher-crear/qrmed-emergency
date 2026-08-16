@@ -5,6 +5,7 @@ from django import forms
 from django.db import connection
 
 from .models import BankAccount, Order, Patient, PaymentSetting, Product, Profile
+from .value_utils import humanize_value
 
 
 DEFAULT_SEX_CHOICES = (
@@ -112,6 +113,19 @@ class StyledFormMixin:
             else:
                 field.widget.attrs.setdefault("class", "form-control")
 
+        # Los datos heredados pueden venir serializados como JSON, arrays de
+        # PostgreSQL o representaciones de Python. En los inputs mostramos solo
+        # el contenido legible, nunca llaves/corchetes de serialización.
+        if not self.is_bound:
+            for name, field in self.fields.items():
+                if not isinstance(field, forms.CharField) or isinstance(field, forms.ChoiceField):
+                    continue
+                raw_value = self.initial.get(name)
+                if raw_value is None and getattr(self, "instance", None) is not None:
+                    raw_value = getattr(self.instance, name, None)
+                if raw_value not in (None, ""):
+                    self.initial[name] = humanize_value(raw_value)
+
 
 class PatientPersonalForm(StyledFormMixin, forms.ModelForm):
     sex = forms.ChoiceField(label="Sexo", choices=(), required=True)
@@ -189,14 +203,19 @@ class PatientMedicalForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if self.instance and self.instance.pk:
+        if self.instance and self.instance.pk and not self.is_bound:
             for name in ("allergies", "diseases", "medications"):
-                self.fields[name].initial = ", ".join(getattr(self.instance, name) or [])
+                self.fields[name].initial = humanize_value(getattr(self.instance, name, None))
+            for name in ("insurance", "disabilities", "history", "notes"):
+                self.fields[name].initial = humanize_value(getattr(self.instance, name, None))
 
     def save(self, commit=True):
         instance = super().save(commit=False)
         for name in ("allergies", "diseases", "medications"):
-            setattr(instance, name, [x.strip() for x in self.cleaned_data.get(name, "").split(",") if x.strip()])
+            readable = humanize_value(self.cleaned_data.get(name, ""))
+            setattr(instance, name, [x.strip() for x in readable.split(",") if x.strip()])
+        for name in ("insurance", "disabilities", "history", "notes"):
+            setattr(instance, name, humanize_value(self.cleaned_data.get(name, ""), default=""))
         if commit:
             instance.save()
         return instance

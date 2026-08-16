@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260814-18">
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260815-credential-v3">
 </head>
 <body class="patient-app" data-search-url="{% url 'patient_global_search' %}">
   <aside class="sidebar patient-sidebar" id="sidebar">
@@ -44,5 +44,5 @@
     {% if messages %}<div class="toast-stack">{% for message in messages %}<div class="toast {{ message.tags }}">{{ message }}<button onclick="this.parentElement.remove()">×</button></div>{% endfor %}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
-  <script defer src="{% static 'panel/vendor/lucide.min.js' %}"></script><script defer src="{% static 'panel/js/app.js' %}?v=20260814-18"></script>{% block scripts %}{% endblock %}
+  <script defer src="{% static 'panel/vendor/lucide.min.js' %}"></script><script defer src="{% static 'panel/js/app.js' %}?v=20260815-credential-v3"></script>{% block scripts %}{% endblock %}
 </body></html>

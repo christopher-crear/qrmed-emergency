@@ -12,13 +12,15 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from .decorators import patient_required
 from .forms import PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm, ProfileForm
+from .credential_pdf import build_credential_pdf
 from .models import BankAccount, Order, OrderItem, PaymentSetting, Product
 from .services import (
-    SupabaseError, sign_in, storage_signed_url, update_password, upload_file,
+    SupabaseError, sign_in, storage_image_bytes, storage_signed_url, update_password, upload_file,
     versioned_media_url,
 )
 
@@ -111,8 +113,7 @@ def credential(request):
     })
 
 
-@patient_required
-def credential_qr(request):
+def _credential_qr_bytes(request):
     public_url = request.build_absolute_uri(reverse("public_patient", kwargs={"token": request.patient.qr_token}))
     cache_key = f"patient-credential-qr:{request.patient.qr_token}:{public_url}"
     image_bytes = cache.get(cache_key)
@@ -120,13 +121,56 @@ def credential_qr(request):
         qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
         qr.add_data(public_url)
         qr.make(fit=True)
-        image = qr.make_image(fill_color="#183b62", back_color="white")
+        image = qr.make_image(fill_color="#0B2A57", back_color="white")
         output = io.BytesIO()
         image.save(output, format="PNG")
         image_bytes = output.getvalue()
         cache.set(cache_key, image_bytes, timeout=3600)
+    return image_bytes
+
+
+@patient_required
+def credential_qr(request):
+    image_bytes = _credential_qr_bytes(request)
     response = HttpResponse(image_bytes, content_type="image/png")
     response["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
+@patient_required
+def credential_print(request):
+    """Vista limpia de impresión con frente y reverso de la credencial."""
+    return render(request, "panel/patient_credential_print.html", {
+        "issue_date": request.patient.created_at,
+    })
+
+
+@patient_required
+def credential_pdf(request):
+    """Genera y descarga el frente y reverso de la credencial médica en PDF."""
+    qr_bytes = _credential_qr_bytes(request)
+    photo_bytes = None
+    if request.patient.photo_path:
+        image = storage_image_bytes(
+            settings.SUPABASE_PATIENT_BUCKET,
+            request.patient.photo_path,
+            identifiers=(request.patient.id, request.patient.owner_id),
+            access_token=request.session.get("supabase_access_token", ""),
+        )
+        if image:
+            photo_bytes = image[0]
+
+    pdf_bytes = build_credential_pdf(
+        request.patient,
+        qr_bytes=qr_bytes,
+        photo_bytes=photo_bytes,
+    )
+    filename = slugify(request.patient.full_name) or "paciente"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    disposition = "inline" if request.GET.get("preview") == "1" else "attachment"
+    response["Content-Disposition"] = f'{disposition}; filename="credencial-qrmed-{filename}.pdf"'
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    response["X-Frame-Options"] = "SAMEORIGIN"
     return response
 
 

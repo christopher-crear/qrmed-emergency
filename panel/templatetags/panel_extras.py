@@ -3,6 +3,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from panel.services import storage_signed_url
+from panel.value_utils import humanize_value
 
 register = template.Library()
 
@@ -20,7 +21,13 @@ def initials(value):
 
 @register.filter
 def comma_join(value):
-    return ", ".join(value or [])
+    return humanize_value(value)
+
+
+@register.filter
+def clean_value(value):
+    """Oculta sintaxis de JSON/arrays en valores heredados de la ficha médica."""
+    return humanize_value(value)
 
 
 @register.filter

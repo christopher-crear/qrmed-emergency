@@ -3,6 +3,7 @@ from django.urls import path
 from . import patient_views, views
 
 urlpatterns = [
+    path("", views.landing, name="landing"),
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
     path("health/", views.health, name="health"),
@@ -10,7 +11,7 @@ urlpatterns = [
     path("media/perfiles/<uuid:profile_id>/portada/", views.profile_cover_image, name="profile_cover_image"),
     path("media/pacientes/<uuid:patient_id>/foto/", views.patient_photo_image, name="patient_photo_image"),
     path("media/bancos/<uuid:bank_id>/<str:kind>/", views.bank_asset_image, name="bank_asset_image"),
-    path("", views.dashboard, name="dashboard"),
+    path("panel/", views.dashboard, name="dashboard"),
     path("buscar/", views.global_search, name="global_search"),
     path("pacientes/", views.patients, name="patients"),
     path("pacientes/nuevo/", views.patient_create, name="patient_create"),
@@ -44,6 +45,8 @@ urlpatterns = [
     path("mi/buscar/", patient_views.global_search, name="patient_global_search"),
     path("mi/credencial/", patient_views.credential, name="patient_credential"),
     path("mi/credencial/qr.png", patient_views.credential_qr, name="patient_credential_qr"),
+    path("mi/credencial/imprimir/", patient_views.credential_print, name="patient_credential_print"),
+    path("mi/credencial/descargar.pdf", patient_views.credential_pdf, name="patient_credential_pdf"),
     path("mi/tienda/", patient_views.store, name="patient_store"),
     path("mi/carrito/", patient_views.cart, name="patient_cart"),
     path("mi/carrito/agregar/<uuid:product_id>/", patient_views.cart_add, name="patient_cart_add"),

@@ -1,0 +1,207 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="QRMed Emergency: tu información médica de emergencia disponible mediante un código QR.">
+  <title>QRMed Emergency · Tu información médica siempre contigo</title>
+  <link rel="icon" href="{% static 'panel/favicon.svg' %}" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'panel/css/landing.css' %}">
+</head>
+<body>
+  <header class="site-header" id="inicio">
+    <div class="container nav-shell">
+      <a class="brand" href="#inicio" aria-label="QRMed Emergency, inicio">
+        <span class="brand-mark"><i data-lucide="qr-code"></i></span>
+        <span>QRMed Emergency</span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="siteNav">
+        <i data-lucide="menu"></i>
+      </button>
+
+      <nav class="site-nav" id="siteNav">
+        <a href="#como-funciona">¿Cómo funciona?</a>
+        <a href="#beneficios">Beneficios</a>
+        <a href="#para-quien">¿Para quién?</a>
+      </nav>
+
+      <div class="nav-actions">
+        <a class="link-login" href="{% url 'login' %}">Iniciar sesión</a>
+        <a class="btn btn-primary btn-sm" href="{% url 'login' %}">Registrarme</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow dark-eyebrow"><i data-lucide="zap"></i> Emergencias médicas inteligentes</span>
+          <h1>Lleva tu información <span>siempre<br>contigo</span></h1>
+          <p>Un código QR en tu pulsera le da a médicos, paramédicos o personas de confianza acceso rápido a tu información médica de emergencia.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="{% url 'login' %}">Crear mi QR <i data-lucide="arrow-right"></i></a>
+            <button class="btn btn-light" type="button" data-open-demo>Ver ficha de ejemplo</button>
+          </div>
+          <div class="hero-stats" aria-label="Ventajas principales">
+            <div><strong>QR único</strong><span>Por paciente</span></div>
+            <div><strong>24/7</strong><span>Disponible</span></div>
+            <div><strong>Sin apps</strong><span>Solo escanear</span></div>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="scan-pill">Escanea y accede</div>
+          <div class="qr-device">
+            <div class="device-glow"></div>
+            <div class="qr-surface"><i data-lucide="qr-code"></i></div>
+          </div>
+          <div class="medical-chip"><span class="medical-dot"><i data-lucide="droplet"></i></span><b>O+</b><span>Alergia: Penicilina</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="quick-access" aria-label="Accesos rápidos">
+      <div class="container">
+        <div class="section-kicker centered light-kicker"><i data-lucide="sparkles"></i> Acceso rápido para pacientes</div>
+        <h2 class="quick-title">Todo lo que necesitas en un solo lugar</h2>
+        <div class="quick-grid">
+          <a class="quick-card" href="{% url 'login' %}">
+            <span class="quick-icon"><i data-lucide="user-round-plus"></i></span>
+            <small>Gratis</small><strong>Registrarme</strong><p>Crea o accede a tu cuenta de paciente.</p><span>Acceder <i data-lucide="arrow-right"></i></span>
+          </a>
+          <a class="quick-card" href="{% url 'login' %}">
+            <span class="quick-icon"><i data-lucide="badge"></i></span>
+            <small>Digital</small><strong>Mi Credencial QR</strong><p>Visualiza tu credencial médica.</p><span>Acceder <i data-lucide="arrow-right"></i></span>
+          </a>
+          <a class="quick-card" href="{% url 'login' %}">
+            <span class="quick-icon"><i data-lucide="shopping-cart"></i></span>
+            <small>Envío nacional</small><strong>Comprar Pulsera</strong><p>Pide tu pulsera inteligente.</p><span>Acceder <i data-lucide="arrow-right"></i></span>
+          </a>
+          <a class="quick-card" href="{% url 'login' %}">
+            <span class="quick-icon"><i data-lucide="package-check"></i></span>
+            <small>En tiempo real</small><strong>Mis Pedidos</strong><p>Consulta historial y seguimiento.</p><span>Acceder <i data-lucide="arrow-right"></i></span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section steps-section" id="como-funciona">
+      <div class="container">
+        <div class="section-heading">
+          <h2>¿Cómo funciona?</h2>
+          <p>En 5 pasos tendrás tu información médica disponible para una emergencia.</p>
+        </div>
+        <div class="steps-grid">
+          <article class="step"><span class="step-icon"><i data-lucide="user-round-plus"></i></span><small>Paso 1</small><h3>Crea una cuenta</h3><p>Ingresa tus datos básicos y accede a tu perfil.</p></article>
+          <article class="step"><span class="step-icon"><i data-lucide="heart-pulse"></i></span><small>Paso 2</small><h3>Registra tu historial</h3><p>Añade información médica, alergias y contactos.</p></article>
+          <article class="step"><span class="step-icon"><i data-lucide="qr-code"></i></span><small>Paso 3</small><h3>Genera tu QR</h3><p>Tu código QR único se crea automáticamente.</p></article>
+          <article class="step"><span class="step-icon"><i data-lucide="shopping-cart"></i></span><small>Paso 4</small><h3>Pide tu pulsera</h3><p>Elige el modelo disponible y realiza tu pedido.</p></article>
+          <article class="step"><span class="step-icon"><i data-lucide="shield-check"></i></span><small>Paso 5</small><h3>Úsala en emergencias</h3><p>Quien te asista escanea tu QR y consulta tu ficha.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section benefits-section" id="beneficios">
+      <div class="container">
+        <div class="section-heading">
+          <h2>Beneficios clave</h2>
+          <p>Diseñado para que tu información médica importante sea fácil de consultar cuando más se necesita.</p>
+        </div>
+        <div class="benefits-grid">
+          <article class="benefit-card"><span class="benefit-icon amber"><i data-lucide="zap"></i></span><h3>Acceso instantáneo</h3><p>La información esencial puede consultarse en segundos al escanear tu código QR.</p></article>
+          <article class="benefit-card"><span class="benefit-icon blue"><i data-lucide="shield-check"></i></span><h3>Seguro y privado</h3><p>Tu ficha se consulta desde una URL asociada a tu código único, sin mostrar credenciales de acceso.</p></article>
+          <article class="benefit-card"><span class="benefit-icon green"><i data-lucide="globe-2"></i></span><h3>Sin barreras</h3><p>Funciona desde el navegador de un smartphone compatible con lectura de códigos QR.</p></article>
+          <article class="benefit-card"><span class="benefit-icon red"><i data-lucide="heart"></i></span><h3>Alergias visibles</h3><p>Ayuda a que alergias y datos críticos destaquen dentro de tu ficha de emergencia.</p></article>
+          <article class="benefit-card"><span class="benefit-icon purple"><i data-lucide="phone"></i></span><h3>Contacto inmediato</h3><p>Permite consultar tus contactos de emergencia desde la misma ficha médica.</p></article>
+          <article class="benefit-card"><span class="benefit-icon cyan"><i data-lucide="refresh-cw"></i></span><h3>Siempre actualizado</h3><p>Los cambios que realices en tu información se reflejan en la ficha vinculada a tu QR.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section audience-section" id="para-quien">
+      <div class="container">
+        <div class="section-heading"><h2>¿Quiénes pueden usarlo?</h2></div>
+        <div class="audience-grid">
+          <article><span><i data-lucide="heart-pulse"></i></span><div><h3>Pacientes crónicos</h3><p>Para tener a mano información relevante sobre su condición y tratamiento.</p></div></article>
+          <article><span><i data-lucide="medal"></i></span><div><h3>Deportistas</h3><p>Útil en entrenamientos, competencias y actividades al aire libre.</p></div></article>
+          <article><span><i data-lucide="users"></i></span><div><h3>Adultos mayores</h3><p>Una ayuda adicional para identificar datos y contactos en una emergencia.</p></div></article>
+          <article><span><i data-lucide="pill"></i></span><div><h3>Personas con alergias</h3><p>Permite mostrar alergias médicas de forma visible en la ficha.</p></div></article>
+          <article><span><i data-lucide="luggage"></i></span><div><h3>Viajeros</h3><p>La información puede consultarse desde un navegador con conexión a internet.</p></div></article>
+          <article><span><i data-lucide="shield"></i></span><div><h3>Padres y cuidadores</h3><p>Facilita llevar información importante de personas bajo su cuidado.</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <div class="container cta-inner">
+        <h2>Tu salud no puede esperar</h2>
+        <p>Accede a QRMed Emergency y mantén tu información médica esencial organizada.</p>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="{% url 'login' %}">Comenzar ahora <i data-lucide="arrow-right"></i></a>
+          <a class="btn btn-light" href="{% url 'login' %}">Ya tengo cuenta</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a class="brand footer-logo" href="#inicio"><span class="brand-mark"><i data-lucide="qr-code"></i></span><span>QRMed Emergency</span></a>
+        <p>Tecnología para organizar y consultar información médica de emergencia.</p>
+      </div>
+      <div><h3>Plataforma</h3><a href="#como-funciona">¿Cómo funciona?</a><a href="#beneficios">Beneficios</a><a href="#para-quien">¿Para quién?</a></div>
+      <div><h3>Soporte</h3><a href="{% url 'login' %}">Centro de acceso</a><a href="#beneficios">Privacidad</a><a href="#beneficios">Seguridad</a></div>
+      <div><h3>Cuenta</h3><a href="{% url 'login' %}">Iniciar sesión</a><a href="{% url 'login' %}">Registrarme</a></div>
+    </div>
+    <div class="container footer-bottom"><span>© {% now "Y" %} QRMed Emergency. Todos los derechos reservados.</span><span>Hecho con <i data-lucide="heart"></i> para cuidar vidas.</span></div>
+  </footer>
+
+  <div class="demo-modal" id="demoModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="demoTitle">
+    <div class="demo-backdrop" data-close-demo></div>
+    <div class="demo-card" role="document">
+      <button class="demo-close" type="button" aria-label="Cerrar" data-close-demo><i data-lucide="x"></i></button>
+      <div class="demo-head"><span class="demo-avatar">AP</span><div><small>Ficha de ejemplo</small><h2 id="demoTitle">Ana Pérez</h2><p>Información médica de emergencia</p></div></div>
+      <div class="demo-alert"><i data-lucide="triangle-alert"></i><div><strong>Alergia importante</strong><span>Penicilina</span></div></div>
+      <div class="demo-info-grid"><div><small>Tipo de sangre</small><strong>O+</strong></div><div><small>Edad</small><strong>34 años</strong></div><div><small>Condición</small><strong>Asma</strong></div><div><small>Contacto</small><strong>Familiar</strong></div></div>
+      <p class="demo-note"><i data-lucide="info"></i> Esta ficha contiene datos ficticios y se muestra únicamente como ejemplo visual.</p>
+    </div>
+  </div>
+
+  <script src="{% static 'panel/vendor/lucide.min.js' %}"></script>
+  <script>
+    lucide.createIcons();
+
+    const toggle = document.querySelector('.nav-toggle');
+    const nav = document.querySelector('#siteNav');
+    toggle?.addEventListener('click', () => {
+      const open = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', String(!open));
+      document.body.classList.toggle('nav-open', !open);
+    });
+    document.querySelectorAll('#siteNav a').forEach((link) => link.addEventListener('click', () => {
+      toggle?.setAttribute('aria-expanded', 'false');
+      document.body.classList.remove('nav-open');
+    }));
+
+    const modal = document.querySelector('#demoModal');
+    const openDemo = () => {
+      modal?.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('modal-open');
+    };
+    const closeDemo = () => {
+      modal?.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('modal-open');
+    };
+    document.querySelectorAll('[data-open-demo]').forEach((el) => el.addEventListener('click', openDemo));
+    document.querySelectorAll('[data-close-demo]').forEach((el) => el.addEventListener('click', closeDemo));
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDemo(); });
+  </script>
+</body>
+</html>

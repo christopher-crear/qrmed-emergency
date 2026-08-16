@@ -253,6 +253,11 @@ def _month_labels_and_counts(objects, months=6):
     return [labels_es[m - 1] for y, m in points], [counter[(y, m)] for y, m in points]
 
 
+def landing(request):
+    """Página pública de presentación de QRMed Emergency."""
+    return render(request, "panel/landing.html")
+
+
 def login_view(request):
     if request.session.get("supabase_user_id"):
         profile_obj = Profile.objects.filter(id=request.session["supabase_user_id"]).first()
