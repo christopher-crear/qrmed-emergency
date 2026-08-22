@@ -185,9 +185,11 @@ render.yaml             Infraestructura de Render
 build.sh                Instalación, estáticos y migraciones
 ```
 
-## Observación sobre el esquema
+## 5. Activar tickets de descuento en Supabase
 
-El SVG recibido no contiene una tabla de códigos de descuento. Por seguridad, este proyecto no inventa ni migra esa tabla dentro de tu base existente. Los campos `orders.discount_code` y `orders.discount_amount` sí se respetan. Si deseas un CRUD completo de cupones, primero crearemos la tabla y sus políticas RLS con el esquema exacto que decidas.
+Antes de usar el módulo **Descuentos**, abre **Supabase → SQL Editor**, copia todo el contenido de `supabase_descuentos.sql` y ejecútalo una sola vez. El script crea las tablas `discount_campaigns` y `discount_tickets`, sus índices, restricciones y políticas RLS.
+
+La aplicación administra las campañas desde `/descuentos/`. Los pacientes pueden reclamar tickets en `/mi/descuentos/`, escribir un código en el carrito y aplicar el descuento durante el pago. Nunca expongas `SUPABASE_SERVICE_ROLE_KEY` en el navegador: debe existir únicamente como variable secreta de Render.
 
 ## Referencias oficiales
 

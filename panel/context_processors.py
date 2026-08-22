@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.db import DatabaseError
 from django.db.models import Q
 
-from .models import Order, Patient, Profile
+from .models import DiscountTicket, Order, Patient, Profile
 from .services import versioned_media_url
 
 
@@ -47,6 +47,12 @@ def admin_context(request):
     preferences = profile.preferences if profile and isinstance(profile.preferences, dict) else {}
     notifications = []
     needs_medical_profile = bool(preferences.get("medical_profile_pending"))
+    ticket_count = 0
+    if profile and not is_admin:
+        try:
+            ticket_count = DiscountTicket.objects.filter(user_id=profile.id, used_at__isnull=True).count()
+        except DatabaseError:
+            ticket_count = 0
     try:
         if profile and is_admin:
             if preferences.get("system_alerts", True):
@@ -110,6 +116,7 @@ def admin_context(request):
         "admin_avatar_url": avatar_url,
         "session_avatar_url": avatar_url,
         "cart_count": cart_count,
+        "ticket_count": ticket_count,
         "notifications": notifications[:8],
         "notification_count": len(notifications),
         "needs_medical_profile": needs_medical_profile,

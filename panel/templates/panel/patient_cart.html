@@ -1,4 +1,31 @@
 {% extends 'panel/user_base.html' %}{% load panel_extras %}
 {% block title %}Mi carrito{% endblock %}
-{% block content %}<div class="patient-page"><header class="patient-page-heading"><div><h1>Mi carrito</h1><p>Revisa tu compra antes de continuar</p></div><a class="btn btn-muted" href="{% url 'patient_store' %}"><i data-lucide="arrow-left"></i> Seguir comprando</a></header>
-{% if cart_rows %}<div class="cart-layout"><section class="patient-card cart-list">{% for row in cart_rows %}<article>{% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}">{% else %}<span><i data-lucide="package"></i></span>{% endif %}<div><h2>{{ row.product.name }}</h2><p>{{ row.color|default:'Sin color' }} · Talla {{ row.size|default:'—' }} · x{{ row.quantity }}</p><strong>{{ row.line_total|money }}</strong></div><form method="post" action="{% url 'patient_cart_remove' row.product.id %}">{% csrf_token %}<button title="Quitar"><i data-lucide="trash-2"></i></button></form></article>{% endfor %}</section><aside class="patient-card cart-summary"><h2>Resumen</h2><div><span>Productos</span><strong>{{ cart_count }}</strong></div><div><span>Subtotal</span><strong>{{ cart_total|money }}</strong></div><div><span>Envío</span><strong class="green-text">Gratis</strong></div><div class="total"><span>Total</span><strong>{{ cart_total|money }}</strong></div><a class="btn btn-primary" href="{% url 'patient_checkout' %}">Finalizar pedido <i data-lucide="arrow-right"></i></a></aside></div>{% else %}<div class="patient-card empty-state"><i data-lucide="shopping-cart"></i><h2>Tu carrito está vacío</h2><p>Explora las pulseras disponibles y agrega tu modelo favorito.</p><a class="btn btn-primary" href="{% url 'patient_store' %}">Ver pulseras</a></div>{% endif %}</div>{% endblock %}
+{% block content %}
+<section class="patient-page cart-page-v2">
+  <header class="patient-page-heading"><div><h1>Mi carrito</h1><p>Revisa tu compra antes de continuar</p></div><a class="btn btn-muted" href="{% url 'patient_store' %}"><i data-lucide="arrow-left"></i> Seguir comprando</a></header>
+  {% if cart_rows %}
+  <div class="cart-layout cart-layout-v2">
+    <section class="cart-products-v2">
+      {% for row in cart_rows %}<article class="patient-card cart-product-v2">
+        <button class="cart-product-image" type="button" data-lightbox-image="{{ row.product.image_url }}" data-lightbox-title="{{ row.product.name }}">
+          {% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}" data-image-fallback><span hidden><i data-lucide="image-off"></i></span>{% else %}<span><i data-lucide="package"></i></span>{% endif %}<em><i data-lucide="zoom-in"></i></em>
+        </button>
+        <div class="cart-product-copy"><h2>{{ row.product.name }}</h2><p><span>{{ row.color|default:'Sin color' }}</span><span>Talla {{ row.size|default:'—' }}</span><span>x{{ row.quantity }}</span></p><button type="button" class="size-guide-link" data-open-size-guide><i data-lucide="ruler"></i> Ver medidas</button><strong>{{ row.line_total|money }}</strong></div>
+        <form method="post" action="{% url 'patient_cart_remove' row.product.id %}">{% csrf_token %}<button class="cart-remove-v2" title="Quitar producto"><i data-lucide="trash-2"></i></button></form>
+      </article>{% endfor %}
+    </section>
+
+    <aside class="patient-card cart-summary cart-summary-v2">
+      <header><span><i data-lucide="receipt-text"></i></span><div><h2>Resumen</h2><p>{{ cart_count }} producto{{ cart_count|pluralize }}</p></div></header>
+      <form class="discount-code-box" method="post" action="{% url 'patient_cart_discount_apply' %}">{% csrf_token %}<label for="discountCode">Código de descuento</label><div><i data-lucide="ticket-percent"></i><input id="discountCode" name="discount_code" placeholder="Ej. QRMED-ABC123" autocomplete="off"><button>Aplicar</button></div></form>
+      {% if wallet_tickets %}<div class="cart-wallet-tickets"><span>O usa uno de tus tickets:</span>{% for row in wallet_tickets %}<form method="post" action="{% url 'patient_cart_discount_apply' %}">{% csrf_token %}<input type="hidden" name="discount_code" value="{{ row.campaign.code }}"><button class="{% if selected_discount and selected_discount.campaign.id == row.campaign.id %}active{% endif %}"><i data-lucide="ticket"></i>{{ row.campaign.code }} · {% if row.campaign.discount_type == 'percentage' %}{{ row.campaign.discount_value|floatformat:'-2' }}%{% else %}{{ row.campaign.discount_value|money }}{% endif %}</button></form>{% endfor %}</div>{% endif %}
+      {% if selected_discount %}<div class="applied-discount {% if not selected_discount.eligible %}is-warning{% endif %}"><i data-lucide="{% if selected_discount.eligible %}badge-check{% else %}triangle-alert{% endif %}"></i><div><strong>{{ selected_discount.campaign.code }}</strong><small>{% if selected_discount.eligible %}Descuento aplicado: -{{ discount_amount|money }}{% else %}Compra mínima: {{ selected_discount.campaign.min_order_amount|money }}{% endif %}</small></div><form method="post" action="{% url 'patient_cart_discount_remove' %}">{% csrf_token %}<button title="Quitar descuento"><i data-lucide="x"></i></button></form></div>{% endif %}
+      <dl><div><dt>Productos</dt><dd>{{ cart_count }}</dd></div><div><dt>Subtotal</dt><dd>{{ cart_subtotal|money }}</dd></div>{% if discount_amount %}<div class="discount-line"><dt>Descuento</dt><dd>−{{ discount_amount|money }}</dd></div>{% endif %}<div><dt>Envío</dt><dd class="green-text">Gratis</dd></div><div class="total"><dt>Total</dt><dd>{{ cart_total|money }}</dd></div></dl>
+      <a class="btn btn-primary cart-checkout-v2" href="{% url 'patient_checkout' %}">Finalizar pedido <i data-lucide="arrow-right"></i></a>
+      <a class="cart-discounts-link" href="{% url 'patient_discounts' %}"><i data-lucide="gift"></i> Ver todos mis tickets</a>
+    </aside>
+  </div>
+  {% else %}<div class="patient-card empty-state cart-empty-v2"><span><i data-lucide="shopping-cart"></i></span><h2>Tu carrito está vacío</h2><p>Explora las pulseras disponibles y agrega tu modelo favorito.</p><a class="btn btn-primary" href="{% url 'patient_store' %}">Ver pulseras</a></div>{% endif %}
+</section>
+{% include 'panel/partials/product_modals.html' %}
+{% endblock %}

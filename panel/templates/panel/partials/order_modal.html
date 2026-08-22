@@ -24,6 +24,7 @@
         <div><span>Cantidad</span><strong>{{ first_item.quantity|default:'0' }}</strong></div>
         <div><span>Precio unitario</span><strong>{{ first_item.unit_price|money }}</strong></div>
         <div><span>Total</span><strong>{{ order.total|money }}</strong></div>
+        {% if order.discount_amount %}<div><span>Descuento</span><strong>−{{ order.discount_amount|money }}</strong><small>{{ order.discount_code }}</small></div>{% endif %}
         <div><span>Fecha del pedido</span><strong>{{ order.created_at|date:'d/m/Y' }}</strong></div>
         <div><span>Entrega estimada</span><strong>{{ order.estimated_delivery|date:'d/m/Y'|default:'Por definir' }}</strong></div>
         <div><span>Estado</span><strong>{{ order.status|status_label }}</strong></div>

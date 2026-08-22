@@ -1,0 +1,23 @@
+{% extends 'panel/user_base.html' %}{% load panel_extras %}
+{% block title %}Mis descuentos{% endblock %}
+{% block content %}
+<section class="patient-page patient-discounts-page">
+  <header class="patient-page-heading"><div><h1>Mis tickets de descuento</h1><p>Revisa tus promociones y utilízalas antes de que venzan.</p></div><a class="btn btn-muted" href="{% url 'patient_store' %}"><i data-lucide="shopping-bag"></i> Ver catálogo</a></header>
+
+  {% if not schema_ready %}<div class="discount-schema-alert"><i data-lucide="database-zap"></i><div><strong>El módulo todavía no está habilitado</strong><p>El administrador debe ejecutar <code>supabase_descuentos.sql</code>.</p></div></div>{% endif %}
+
+  {% if available_campaigns %}<section class="ticket-drop-section"><header><div><span class="section-eyebrow">DISPONIBLES AHORA</span><h2>Agarra un ticket antes de que se agote</h2></div></header><div class="ticket-drop-grid">{% for campaign in available_campaigns %}<article class="claimable-ticket"><span><i data-lucide="gift"></i></span><div><small>{{ campaign.remaining_count }} disponibles</small><h3>{{ campaign.title }}</h3><strong>{% if campaign.discount_type == 'percentage' %}{{ campaign.discount_value|floatformat:'-2' }}%{% else %}{{ campaign.discount_value|money }}{% endif %} de descuento</strong><p>{{ campaign.description|default:'Promoción especial QRMed.' }}</p></div><form method="post" action="{% url 'patient_discount_claim' campaign.id %}">{% csrf_token %}<input type="hidden" name="next" value="{% url 'patient_discounts' %}"><button class="btn btn-primary"><i data-lucide="hand"></i> Agarrar ticket</button></form></article>{% endfor %}</div></section>{% endif %}
+
+  <section class="ticket-wallet">
+    <header><h2>Mi billetera</h2><span>{{ filtered_count }} ticket{{ filtered_count|pluralize }}</span></header>
+    <div class="ticket-wallet-grid">
+      {% for row in ticket_rows %}<article class="wallet-ticket {% if row.ticket.used_at %}is-used{% elif not row.is_available %}is-expired{% endif %}">
+        <div class="wallet-ticket-main"><small>{{ row.campaign.code }}</small><h3>{{ row.campaign.title }}</h3><strong>{% if row.campaign.discount_type == 'percentage' %}{{ row.campaign.discount_value|floatformat:'-2' }}%{% else %}{{ row.campaign.discount_value|money }}{% endif %} OFF</strong><p>{{ row.campaign.description|default:'Ticket promocional QRMed.' }}</p></div>
+        <div class="wallet-ticket-stub"><i data-lucide="qr-code"></i><span>{% if row.ticket.used_at %}UTILIZADO{% elif row.is_available %}DISPONIBLE{% else %}VENCIDO{% endif %}</span><small>{% if row.campaign.expires_at %}{{ row.campaign.expires_at|date:'d/m/Y' }}{% else %}Sin vencimiento{% endif %}</small></div>
+        {% if row.is_available %}<form method="post" action="{% url 'patient_cart_discount_apply' %}">{% csrf_token %}<input type="hidden" name="discount_code" value="{{ row.campaign.code }}"><button><i data-lucide="shopping-cart"></i> Usar en el carrito</button></form>{% endif %}
+      </article>{% empty %}<div class="discount-empty"><i data-lucide="ticket-x"></i><h3>Aún no tienes tickets</h3><p>Cuando aparezca una campaña, pulsa “Agarrar ticket”.</p></div>{% endfor %}
+    </div>
+    {% include 'panel/partials/pagination.html' %}
+  </section>
+</section>
+{% endblock %}

@@ -15,6 +15,7 @@
       <div><dt>Color</dt><dd>{{ first_item.selected_color|default:'—' }}</dd></div>
       <div><dt>Talla</dt><dd>{{ first_item.selected_size|default:'—' }}</dd></div>
       <div><dt>Estado del pago</dt><dd>Pendiente de validación</dd></div>
+      {% if order.discount_amount %}<div><dt>Ticket aplicado</dt><dd>{{ order.discount_code }} · −{{ order.discount_amount|money }}</dd></div>{% endif %}
       <div><dt>Total</dt><dd>{{ order.total|money }}</dd></div>
       <div><dt>Entrega estimada</dt><dd>5–8 días tras confirmar pago</dd></div>
     </dl>

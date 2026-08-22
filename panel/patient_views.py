@@ -19,7 +19,7 @@ from django.views.decorators.http import require_POST
 from .decorators import patient_required
 from .forms import PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm, ProfileForm
 from .credential_pdf import build_credential_pdf
-from .models import BankAccount, Order, OrderItem, PaymentSetting, Product
+from .models import BankAccount, DiscountCampaign, DiscountTicket, Order, OrderItem, PaymentSetting, Product
 from .pagination import paginate_items
 from .services import (
     SupabaseError, sign_in, storage_image_bytes, storage_signed_url, update_password, upload_file,
@@ -76,6 +76,94 @@ def _cart_data(request):
     return value if isinstance(value, dict) else {}
 
 
+class DiscountClaimError(Exception):
+    pass
+
+
+def _campaign_is_open(campaign, now=None):
+    now = now or timezone.now()
+    return bool(
+        campaign.is_active
+        and (not campaign.starts_at or campaign.starts_at <= now)
+        and (not campaign.expires_at or campaign.expires_at > now)
+    )
+
+
+def _discount_amount(campaign, subtotal):
+    subtotal = Decimal(subtotal or 0)
+    if subtotal < Decimal(campaign.min_order_amount or 0):
+        return Decimal("0")
+    value = Decimal(campaign.discount_value or 0)
+    if campaign.discount_type == "percentage":
+        amount = subtotal * value / Decimal("100")
+    else:
+        amount = value
+    return min(subtotal, amount).quantize(Decimal("0.01"))
+
+
+def _selected_discount(request, subtotal):
+    ticket_id = request.session.get("discount_ticket_id")
+    if not ticket_id:
+        return None
+    try:
+        ticket = DiscountTicket.objects.filter(
+            id=ticket_id, user_id=request.user_profile.id, used_at__isnull=True
+        ).first()
+        campaign = DiscountCampaign.objects.filter(id=ticket.campaign_id).first() if ticket else None
+    except (DatabaseError, ValueError):
+        return None
+    if not ticket or not campaign or not _campaign_is_open(campaign):
+        request.session.pop("discount_ticket_id", None)
+        request.session.modified = True
+        return None
+    amount = _discount_amount(campaign, subtotal)
+    if amount <= 0:
+        return {"ticket": ticket, "campaign": campaign, "amount": amount, "eligible": False}
+    return {"ticket": ticket, "campaign": campaign, "amount": amount, "eligible": True}
+
+
+def _claim_campaign(request, campaign):
+    now = timezone.now()
+    if not _campaign_is_open(campaign, now):
+        raise DiscountClaimError("Este ticket todavía no está disponible o ya venció.")
+    existing = DiscountTicket.objects.filter(
+        campaign_id=campaign.id, user_id=request.user_profile.id
+    ).first()
+    if existing:
+        if existing.used_at:
+            raise DiscountClaimError("Ya utilizaste el ticket de esta campaña.")
+        return existing, False
+    claimed = DiscountTicket.objects.filter(campaign_id=campaign.id).count()
+    if claimed >= campaign.max_claims:
+        raise DiscountClaimError("Los tickets de esta campaña se agotaron.")
+    ticket = DiscountTicket(
+        id=uuid.uuid4(), campaign_id=campaign.id, user_id=request.user_profile.id,
+        claimed_at=now,
+    )
+    ticket.save(force_insert=True)
+    return ticket, True
+
+
+def _available_discounts(request):
+    now = timezone.now()
+    try:
+        campaigns = list(DiscountCampaign.objects.filter(is_active=True).order_by("-created_at"))
+        claimed_ids = set(DiscountTicket.objects.filter(
+            user_id=request.user_profile.id
+        ).values_list("campaign_id", flat=True))
+        result = []
+        for campaign in campaigns:
+            if not _campaign_is_open(campaign, now) or campaign.id in claimed_ids:
+                continue
+            campaign.claimed_count = DiscountTicket.objects.filter(campaign_id=campaign.id).count()
+            campaign.remaining_count = max(0, campaign.max_claims - campaign.claimed_count)
+            if campaign.remaining_count:
+                result.append(campaign)
+        return result
+    except DatabaseError:
+        return []
+
+
 def _cart_context(request):
     cart_data = _cart_data(request)
     products = Product.objects.filter(id__in=list(cart_data), is_active=True)
@@ -93,7 +181,16 @@ def _cart_context(request):
             "size": saved.get("size", ""),
             "line_total": line_total,
         })
-    return {"cart_rows": rows, "cart_total": total, "cart_count": sum(row["quantity"] for row in rows)}
+    selected_discount = _selected_discount(request, total)
+    discount_amount = selected_discount["amount"] if selected_discount and selected_discount["eligible"] else Decimal("0")
+    return {
+        "cart_rows": rows,
+        "cart_subtotal": total,
+        "cart_total": max(Decimal("0"), total - discount_amount),
+        "cart_count": sum(row["quantity"] for row in rows),
+        "discount_amount": discount_amount,
+        "selected_discount": selected_discount,
+    }
 
 
 @patient_required
@@ -119,6 +216,7 @@ def global_search(request):
         ("Mi credencial", "Código QR de emergencia", "patient_credential"),
         ("Comprar pulsera", "Catálogo de productos", "patient_store"),
         ("Carrito", "Productos seleccionados", "patient_cart"),
+        ("Mis descuentos", "Tickets y cupones disponibles", "patient_discounts"),
         ("Mi ficha médica", "Datos médicos y contactos", "patient_medical_record"),
         ("Mis pedidos", "Seguimiento y código de entrega", "patient_orders"),
         ("Perfil", "Datos de mi cuenta", "patient_profile"),
@@ -214,7 +312,11 @@ def store(request):
         products = products.filter(Q(name__icontains=query) | Q(description__icontains=query))
     pagination = paginate_items(request, products)
     context = _cart_context(request)
-    context.update({"products": pagination.pop("items"), "q": query, **pagination})
+    context.update({
+        "products": pagination.pop("items"), "q": query,
+        "available_discounts": _available_discounts(request),
+        **pagination,
+    })
     return render(request, "panel/patient_store.html", context)
 
 
@@ -252,7 +354,99 @@ def cart_remove(request, product_id):
 
 @patient_required
 def cart(request):
-    return render(request, "panel/patient_cart.html", _cart_context(request))
+    context = _cart_context(request)
+    try:
+        tickets = list(DiscountTicket.objects.filter(
+            user_id=request.user_profile.id, used_at__isnull=True
+        ))
+        campaigns = {str(item.id): item for item in DiscountCampaign.objects.filter(
+            id__in=[ticket.campaign_id for ticket in tickets]
+        )}
+        context["wallet_tickets"] = [
+            {"ticket": ticket, "campaign": campaigns.get(str(ticket.campaign_id))}
+            for ticket in tickets if campaigns.get(str(ticket.campaign_id))
+        ]
+    except DatabaseError:
+        context["wallet_tickets"] = []
+    return render(request, "panel/patient_cart.html", context)
+
+
+@patient_required
+@require_POST
+def cart_discount_apply(request):
+    code = str(request.POST.get("discount_code") or "").strip().upper()
+    if not code:
+        messages.error(request, "Escribe un código de descuento.")
+        return redirect("patient_cart")
+    try:
+        with transaction.atomic():
+            campaign = DiscountCampaign.objects.select_for_update().filter(code__iexact=code).first()
+            if not campaign:
+                raise DiscountClaimError("El código ingresado no existe.")
+            ticket, created = _claim_campaign(request, campaign)
+            subtotal = _cart_context(request)["cart_subtotal"]
+            if subtotal < Decimal(campaign.min_order_amount or 0):
+                raise DiscountClaimError(f"Este ticket requiere una compra mínima de ${campaign.min_order_amount}.")
+            request.session["discount_ticket_id"] = str(ticket.id)
+            request.session.modified = True
+    except (DiscountClaimError, DatabaseError, IntegrityError) as exc:
+        messages.error(request, str(exc) if str(exc) else "No se pudo aplicar el ticket.")
+    else:
+        messages.success(request, "Ticket reclamado y aplicado al carrito." if created else "Descuento aplicado al carrito.")
+    return redirect("patient_cart")
+
+
+@patient_required
+@require_POST
+def cart_discount_remove(request):
+    request.session.pop("discount_ticket_id", None)
+    request.session.modified = True
+    messages.info(request, "Descuento retirado del carrito.")
+    return redirect("patient_cart")
+
+
+@patient_required
+@require_POST
+def discount_claim(request, campaign_id):
+    try:
+        with transaction.atomic():
+            campaign = DiscountCampaign.objects.select_for_update().get(id=campaign_id)
+            ticket, created = _claim_campaign(request, campaign)
+    except DiscountCampaign.DoesNotExist:
+        messages.error(request, "La campaña ya no existe.")
+    except (DiscountClaimError, DatabaseError, IntegrityError) as exc:
+        messages.error(request, str(exc) if str(exc) else "No se pudo reclamar el ticket.")
+    else:
+        messages.success(request, "¡Conseguiste el ticket! Ya está en tu billetera." if created else "Este ticket ya está en tu billetera.")
+    return redirect("patient_discounts")
+
+
+@patient_required
+def discounts(request):
+    try:
+        tickets = list(DiscountTicket.objects.filter(user_id=request.user_profile.id))
+        campaigns = {str(item.id): item for item in DiscountCampaign.objects.filter(
+            id__in=[ticket.campaign_id for ticket in tickets]
+        )}
+        rows = []
+        for ticket in tickets:
+            campaign = campaigns.get(str(ticket.campaign_id))
+            if not campaign:
+                continue
+            rows.append({
+                "ticket": ticket, "campaign": campaign,
+                "is_available": not ticket.used_at and _campaign_is_open(campaign),
+            })
+        schema_ready = True
+    except DatabaseError:
+        rows, schema_ready = [], False
+    pagination = paginate_items(request, rows)
+    return render(request, "panel/patient_discounts.html", {
+        "ticket_rows": pagination.pop("items"),
+        "available_campaigns": _available_discounts(request) if schema_ready else [],
+        "schema_ready": schema_ready,
+        **pagination,
+    })
 
 
 @patient_required
@@ -309,12 +503,35 @@ def checkout(request):
                 messages.error(request, str(exc))
             else:
                 with transaction.atomic():
+                    discount_ticket = None
+                    discount_campaign = None
+                    discount_amount = Decimal("0")
+                    selected_discount = cart_context.get("selected_discount")
+                    if selected_discount and selected_discount.get("eligible"):
+                        discount_ticket = DiscountTicket.objects.select_for_update().filter(
+                            id=selected_discount["ticket"].id,
+                            user_id=request.user_profile.id,
+                            used_at__isnull=True,
+                        ).first()
+                        if discount_ticket:
+                            discount_campaign = DiscountCampaign.objects.select_for_update().filter(
+                                id=discount_ticket.campaign_id
+                            ).first()
+                        if not discount_ticket or not discount_campaign or not _campaign_is_open(discount_campaign, now):
+                            request.session.pop("discount_ticket_id", None)
+                            request.session.modified = True
+                            messages.error(request, "El ticket dejó de estar disponible. Vuelve al carrito y selecciona otro.")
+                            return redirect("patient_cart")
+                        discount_amount = _discount_amount(discount_campaign, cart_context["cart_subtotal"])
+                    final_total = max(Decimal("0"), cart_context["cart_subtotal"] - discount_amount)
                     order = Order(
                         id=order_id,
                         user_id=request.user_profile.id,
                         order_number=f"ORD-{now:%Y%m%d}-{uuid.uuid4().hex[:6].upper()}",
-                        total=cart_context["cart_total"], subtotal=cart_context["cart_total"],
-                        discount_amount=Decimal("0"), status="pending", payment_method=method,
+                        total=final_total, subtotal=cart_context["cart_subtotal"],
+                        discount_amount=discount_amount,
+                        discount_code=discount_campaign.code if discount_campaign else None,
+                        status="pending", payment_method=method,
                         payment_proof_path=proof_path,
                         shipping_address=shipping["address"], shipping_name=shipping["name"],
                         shipping_city=shipping["city"], shipping_postal=shipping["postal"],
@@ -322,6 +539,10 @@ def checkout(request):
                         created_at=now, updated_at=now,
                     )
                     order.save(force_insert=True)
+                    if discount_ticket:
+                        discount_ticket.used_at = now
+                        discount_ticket.order_id = order.id
+                        discount_ticket.save(update_fields=["used_at", "order_id"])
                     for row in cart_context["cart_rows"]:
                         OrderItem(
                             id=uuid.uuid4(), order_id=order.id, product_id=row["product"].id,
@@ -333,6 +554,7 @@ def checkout(request):
                             row["product"].updated_at = now
                             row["product"].save(update_fields=["stock", "updated_at"])
                 request.session["patient_cart"] = {}
+                request.session.pop("discount_ticket_id", None)
                 request.session.modified = True
                 messages.success(request, f"Pedido {order.order_number} enviado para validar el pago.")
                 return redirect("patient_checkout_success", order_id=order.id)

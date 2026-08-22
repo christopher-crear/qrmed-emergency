@@ -25,6 +25,7 @@
       <a href="{% url 'users' %}" class="{% if request.resolver_match.url_name == 'users' %}active{% endif %}"><i data-lucide="user-cog"></i><span>Usuarios</span></a>
       <a href="{% url 'profile' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="user-round"></i><span>Perfil</span></a>
       <a href="{% url 'banks' %}" class="{% if 'bank' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="landmark"></i><span>Bancos y cuentas</span></a>
+      <a href="{% url 'discounts' %}" class="{% if 'discount' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="ticket-percent"></i><span>Descuentos</span></a>
       <a href="{% url 'configuration' %}" class="{% if request.resolver_match.url_name == 'configuration' %}active{% endif %}"><i data-lucide="settings"></i><span>Configuración</span></a>
     </nav>
     <a class="logout-link" href="{% url 'logout' %}"><i data-lucide="log-out"></i><span>Cerrar sesión</span></a>

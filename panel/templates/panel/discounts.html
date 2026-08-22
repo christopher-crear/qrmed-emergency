@@ -1,0 +1,62 @@
+{% extends 'panel/base.html' %}{% load panel_extras %}
+{% block title %}Tickets de descuento{% endblock %}
+{% block content %}
+<section class="discount-admin-page">
+  <header class="discount-admin-heading">
+    <div><span class="section-eyebrow">PROMOCIONES</span><h1>Tickets de descuento</h1><p>Crea campañas limitadas para premiar a los primeros usuarios que reclamen un ticket.</p></div>
+    <span class="discount-schema-status {% if not schema_ready %}is-error{% endif %}"><i data-lucide="{% if schema_ready %}shield-check{% else %}triangle-alert{% endif %}"></i>{% if schema_ready %}Módulo protegido{% else %}Falta ejecutar SQL{% endif %}</span>
+  </header>
+
+  {% if not schema_ready %}<div class="discount-schema-alert"><i data-lucide="database-zap"></i><div><strong>Activa las tablas de descuentos</strong><p>Ejecuta el archivo <code>supabase_descuentos.sql</code> en el SQL Editor de Supabase y vuelve a cargar esta página.</p></div></div>{% endif %}
+
+  <section class="discount-admin-stats">
+    <article><span><i data-lucide="ticket-percent"></i></span><div><small>Campañas</small><strong>{{ campaigns_total }}</strong></div></article>
+    <article><span><i data-lucide="users"></i></span><div><small>Tickets reclamados</small><strong>{{ tickets_total }}</strong></div></article>
+    <article><span><i data-lucide="gift"></i></span><div><small>Tickets disponibles</small><strong>{{ tickets_available }}</strong></div></article>
+  </section>
+
+  <div class="discount-admin-layout">
+    <form method="post" class="card discount-campaign-form" id="discountForm">{% csrf_token %}
+      {% if editing %}<input type="hidden" name="campaign_id" value="{{ editing.id }}">{% endif %}
+      <header><span><i data-lucide="{% if editing %}ticket-check{% else %}ticket-plus{% endif %}"></i></span><div><h2>{% if editing %}Editar campaña{% else %}Crear campaña{% endif %}</h2><p>El código puede generarse automáticamente.</p></div></header>
+      {% if form.non_field_errors %}<div class="form-alert">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="discount-form-grid">
+        {% include 'panel/partials/field.html' with field=form.title label='Nombre de la campaña' full=True %}
+        <div class="form-group full discount-code-field"><label for="{{ form.code.id_for_label }}">Código</label><div>{{ form.code }}<button type="button" data-generate-discount-code><i data-lucide="wand-sparkles"></i>Generar</button></div>{% for error in form.code.errors %}<span class="field-error">{{ error }}</span>{% endfor %}</div>
+        {% include 'panel/partials/field.html' with field=form.discount_type label='Tipo de descuento' %}
+        {% include 'panel/partials/field.html' with field=form.discount_value label='Valor del descuento' %}
+        {% include 'panel/partials/field.html' with field=form.min_order_amount label='Compra mínima' %}
+        {% include 'panel/partials/field.html' with field=form.max_claims label='Límite de tickets' %}
+        {% include 'panel/partials/field.html' with field=form.starts_at label='Disponible desde' %}
+        {% include 'panel/partials/field.html' with field=form.expires_at label='Vence el' %}
+        {% include 'panel/partials/field.html' with field=form.description label='Mensaje para el usuario' full=True %}
+        <div class="form-group full"><label class="discount-active-check">{{ form.is_active }}<span><strong>Campaña activa</strong><small>Los usuarios podrán reclamar tickets durante el periodo configurado.</small></span></label></div>
+      </div>
+      <div class="discount-form-actions"><a class="btn btn-outline" href="{% url 'discounts' %}">Limpiar</a><button class="btn btn-primary" {% if not schema_ready %}disabled{% endif %}><i data-lucide="save"></i>{% if editing %}Guardar cambios{% else %}Crear tickets{% endif %}</button></div>
+    </form>
+
+    <section class="discount-campaign-list">
+      <header><div><h2>Campañas creadas</h2><p>Controla disponibilidad, uso y cantidad restante.</p></div></header>
+      {% for campaign in campaigns %}
+        <article class="discount-ticket-admin {% if not campaign.is_active %}is-paused{% endif %}">
+          <div class="discount-ticket-admin__cut"></div>
+          <div class="discount-ticket-admin__main">
+            <span class="discount-ticket-state {% if campaign.is_available_now %}available{% endif %}">{% if campaign.is_available_now %}Disponible{% elif campaign.is_active %}Agotado o fuera de fecha{% else %}Pausado{% endif %}</span>
+            <small>{{ campaign.code }}</small><h3>{{ campaign.title }}</h3><strong>{% if campaign.discount_type == 'percentage' %}{{ campaign.discount_value|floatformat:'-2' }}%{% else %}{{ campaign.discount_value|money }}{% endif %} OFF</strong>
+            <p>{{ campaign.description|default:'Ticket promocional QRMed.' }}</p>
+          </div>
+          <div class="discount-ticket-admin__side">
+            <div><span>Reclamados</span><strong>{{ campaign.claimed_count }} / {{ campaign.max_claims }}</strong></div>
+            <div><span>Usados</span><strong>{{ campaign.used_count }}</strong></div>
+            <div><span>Restantes</span><strong>{{ campaign.remaining_count }}</strong></div>
+            <small>{% if campaign.expires_at %}Vence {{ campaign.expires_at|date:'d/m/Y H:i' }}{% else %}Sin vencimiento{% endif %}</small>
+            <div class="discount-ticket-actions"><a href="?edit={{ campaign.id }}#discountForm" title="Editar"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'discount_toggle' campaign.id %}">{% csrf_token %}<button title="{% if campaign.is_active %}Pausar{% else %}Activar{% endif %}"><i data-lucide="{% if campaign.is_active %}pause{% else %}play{% endif %}"></i></button></form></div>
+          </div>
+        </article>
+      {% empty %}<div class="discount-empty"><i data-lucide="ticket-x"></i><h3>No existen campañas</h3><p>Crea la primera desde el formulario.</p></div>{% endfor %}
+      {% include 'panel/partials/pagination.html' %}
+    </section>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script>document.querySelector('[data-generate-discount-code]')?.addEventListener('click',()=>{const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let value='QRMED-';crypto.getRandomValues(new Uint8Array(6)).forEach(number=>value+=chars[number%chars.length]);document.getElementById('id_code').value=value;});</script>{% endblock %}

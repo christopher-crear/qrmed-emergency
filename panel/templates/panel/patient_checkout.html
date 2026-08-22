@@ -86,6 +86,7 @@
         <article><h3>Dirección de envío</h3><p><strong data-review-name>{{ shipping.name }}</strong><br><span data-review-address>{{ shipping.address }}, {{ shipping.city }} {{ shipping.postal }}</span></p></article>
         <article><h3>Método de pago</h3><p class="review-method"><i data-lucide="credit-card"></i><strong data-review-method>Transferencia bancaria</strong></p></article>
         <article><h3>Comprobante adjunto</h3><p class="review-proof"><i data-lucide="circle-check"></i><span><strong data-review-proof>Selecciona un archivo</strong><small>Se enviará para validación</small></span><em>Pendiente de validación</em></p></article>
+        {% if selected_discount and selected_discount.eligible %}<article class="checkout-discount-review"><h3>Ticket aplicado</h3><p><i data-lucide="ticket-check"></i><strong>{{ selected_discount.campaign.code }}</strong><span>Ahorras {{ discount_amount|money }}</span></p></article>{% endif %}
         <div class="checkout-warning"><i data-lucide="info"></i><span>Tu pedido quedará con estado</span><strong>Pago pendiente de validación</strong></div>
         <div class="checkout-buttons"><button class="btn" type="button" data-next-step="2"><i data-lucide="arrow-left"></i> Atrás</button><button class="btn btn-primary" type="submit"><i data-lucide="check"></i> Enviar pedido</button></div>
       </section>
@@ -94,7 +95,7 @@
     <aside class="patient-card checkout-summary">
       <h2>Resumen del pedido</h2>
       {% for row in cart_rows %}<div class="checkout-product">{% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}">{% else %}<span class="checkout-product-placeholder"><i data-lucide="package"></i></span>{% endif %}<span><strong>{{ row.product.name }}</strong><small>{{ row.color }} · {{ row.size }} · x{{ row.quantity }}</small></span><b>{{ row.line_total|money }}</b></div>{% endfor %}
-      <hr><div><span>Subtotal</span><b>{{ cart_total|money }}</b></div><div><span>Envío</span><b class="green-text">Gratis</b></div><div class="total"><span>Total</span><b>{{ cart_total|money }}</b></div>
+      <hr><div><span>Subtotal</span><b>{{ cart_subtotal|money }}</b></div>{% if discount_amount %}<div class="discount-line"><span>Descuento {{ selected_discount.campaign.code }}</span><b>−{{ discount_amount|money }}</b></div>{% endif %}<div><span>Envío</span><b class="green-text">Gratis</b></div><div class="total"><span>Total</span><b>{{ cart_total|money }}</b></div>
       <p data-summary-method><i data-lucide="credit-card"></i><span data-summary-method-text>Transferencia bancaria</span></p><p><i data-lucide="clock"></i> Entrega estimada: 5–8 días hábiles tras confirmar el pago</p>
     </aside>
   </form>

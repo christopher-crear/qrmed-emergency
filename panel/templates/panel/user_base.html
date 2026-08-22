@@ -21,6 +21,7 @@
       <a href="{% url 'patient_credential' %}" class="{% if request.resolver_match.url_name == 'patient_credential' %}active{% endif %}"><i data-lucide="contact"></i><span>Mi Credencial</span></a>
       <a href="{% url 'patient_store' %}" class="{% if request.resolver_match.url_name == 'patient_store' %}active{% endif %}"><i data-lucide="shopping-bag"></i><span>Comprar Pulsera</span></a>
       <a href="{% url 'patient_cart' %}" class="{% if 'cart' in request.resolver_match.url_name or 'checkout' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="shopping-cart"></i><span>Carrito</span>{% if cart_count %}<b class="nav-count">{{ cart_count }}</b>{% endif %}</a>
+      <a href="{% url 'patient_discounts' %}" class="{% if request.resolver_match.url_name == 'patient_discounts' %}active{% endif %}"><i data-lucide="ticket-percent"></i><span>Mis descuentos</span>{% if ticket_count %}<b class="nav-count">{{ ticket_count }}</b>{% endif %}</a>
       <a href="{% url 'patient_medical_record' 1 %}" class="{% if request.resolver_match.url_name == 'patient_medical_record' %}active{% endif %}"><i data-lucide="notebook-tabs"></i><span>Mi Ficha Médica</span></a>
       <a href="{% url 'patient_orders' %}" class="{% if 'patient_order' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="package"></i><span>Mis Pedidos</span></a>
       <a href="{% url 'patient_profile' %}" class="{% if 'patient_profile' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="user-round"></i><span>Perfil</span></a>
@@ -32,7 +33,7 @@
     <button class="icon-button" id="menuButton" aria-label="Alternar menú"><i data-lucide="menu"></i></button>
     <div class="global-search"><i data-lucide="search"></i><input id="globalSearch" autocomplete="off" placeholder="Buscar en el panel..."><div class="search-results" id="searchResults"></div></div>
     <div class="top-actions">
-      <a class="icon-button patient-cart-top" href="{% url 'patient_cart' %}" aria-label="Carrito"><i data-lucide="shopping-bag"></i>{% if cart_count %}<b>{{ cart_count }}</b>{% endif %}</a>
+      <a class="icon-button patient-cart-top" href="{% url 'patient_cart' %}" aria-label="Carrito"><i data-lucide="shopping-cart"></i>{% if cart_count %}<b>{{ cart_count }}</b>{% endif %}</a>
       <button class="icon-button notification-button" id="notificationButton" aria-label="Notificaciones" aria-expanded="false"><i data-lucide="bell"></i>{% if notification_count %}<span>{{ notification_count }}</span>{% endif %}</button>
       <button class="profile-trigger" id="profileTrigger">
         {% if session_avatar_url %}<img src="{{ session_avatar_url }}" alt="Foto de {{ session_patient.full_name }}" data-avatar-fallback><span class="avatar-placeholder initials-avatar" hidden>{{ session_patient.full_name|initials }}</span>{% else %}<span class="avatar-placeholder initials-avatar">{{ session_patient.full_name|initials }}</span>{% endif %}<i data-lucide="chevron-down"></i>

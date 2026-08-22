@@ -217,6 +217,46 @@ class BankAccount(ExistingTable):
         ordering = ["display_order", "bank_name"]
 
 
+class DiscountCampaign(ExistingTable):
+    """Campaña creada por un administrador para repartir tickets limitados."""
+
+    TYPE_CHOICES = [("percentage", "Porcentaje"), ("fixed", "Valor fijo")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    code = models.CharField(max_length=40, unique=True)
+    title = models.CharField(max_length=120)
+    description = models.TextField(blank=True, null=True)
+    discount_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="percentage")
+    discount_value = models.DecimalField(max_digits=12, decimal_places=2)
+    min_order_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    max_claims = models.PositiveIntegerField(default=1)
+    starts_at = models.DateTimeField(blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.UUIDField(blank=True, null=True)
+    created_at = models.DateTimeField(blank=True, null=True)
+    updated_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta(ExistingTable.Meta):
+        db_table = "discount_campaigns"
+        ordering = ["-created_at"]
+
+
+class DiscountTicket(ExistingTable):
+    """Ticket reclamado por un usuario y utilizable una única vez."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    campaign_id = models.UUIDField()
+    user_id = models.UUIDField()
+    claimed_at = models.DateTimeField(blank=True, null=True)
+    used_at = models.DateTimeField(blank=True, null=True)
+    order_id = models.UUIDField(blank=True, null=True)
+
+    class Meta(ExistingTable.Meta):
+        db_table = "discount_tickets"
+        ordering = ["-claimed_at"]
+
+
 class PaymentSetting(ExistingTable):
     id = models.BooleanField(primary_key=True, default=True)
     bank_name = models.TextField(blank=True, null=True)

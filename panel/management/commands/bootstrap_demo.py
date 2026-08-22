@@ -6,7 +6,10 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection
 from django.utils import timezone
 
-from panel.models import BankAccount, Order, OrderItem, Patient, PaymentSetting, Product, Profile
+from panel.models import (
+    BankAccount, DiscountCampaign, DiscountTicket, Order, OrderItem, Patient,
+    PaymentSetting, Product, Profile,
+)
 
 
 class Command(BaseCommand):
@@ -29,6 +32,8 @@ class Command(BaseCommand):
             """CREATE TABLE IF NOT EXISTS order_items (id varchar(36) PRIMARY KEY, order_id varchar(36), product_id varchar(36), quantity integer, unit_price decimal(12,2), selected_color text, selected_size text)""",
             """CREATE TABLE IF NOT EXISTS payment_settings (id bool PRIMARY KEY, bank_name text, account_type text, account_number text, interbank_code text, account_holder text, tax_id text, notification_email text, transfer_qr_payload text, updated_at datetime)""",
             """CREATE TABLE IF NOT EXISTS bank_accounts (id varchar(36) PRIMARY KEY, bank_name text, account_holder text, account_number text, account_type text, tax_id text, instructions text, is_visible bool, display_order integer, logo_path text, qr_path text, created_by varchar(36), created_at datetime, updated_at datetime)""",
+            """CREATE TABLE IF NOT EXISTS discount_campaigns (id varchar(36) PRIMARY KEY, code varchar(40) UNIQUE, title varchar(120), description text, discount_type varchar(20), discount_value decimal(12,2), min_order_amount decimal(12,2), max_claims integer, starts_at datetime, expires_at datetime, is_active bool, created_by varchar(36), created_at datetime, updated_at datetime)""",
+            """CREATE TABLE IF NOT EXISTS discount_tickets (id varchar(36) PRIMARY KEY, campaign_id varchar(36), user_id varchar(36), claimed_at datetime, used_at datetime, order_id varchar(36), UNIQUE(campaign_id, user_id))""",
         ]
         with connection.cursor() as cursor:
             for statement in statements:
@@ -81,3 +86,14 @@ class Command(BaseCommand):
                     "updated_at": now,
                 },
             )
+        DiscountCampaign.objects.update_or_create(
+            id=uuid.UUID("88888888-8888-8888-8888-888888888881"),
+            defaults={
+                "code": "QRMED-BIENVENIDA", "title": "Bienvenida QRMed",
+                "description": "Obtén un descuento especial en tu próxima pulsera.",
+                "discount_type": "percentage", "discount_value": Decimal("15.00"),
+                "min_order_amount": Decimal("10.00"), "max_claims": 25,
+                "starts_at": now - timedelta(days=1), "expires_at": now + timedelta(days=30),
+                "is_active": True, "created_by": admin_id, "created_at": now, "updated_at": now,
+            },
+        )

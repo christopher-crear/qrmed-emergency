@@ -127,6 +127,33 @@ document.addEventListener('DOMContentLoaded', () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     }, { once: true });
   });
+
+  const imageLightbox = document.getElementById('productImageLightbox');
+  const sizeGuide = document.getElementById('sizeGuideModal');
+  const closeProductModals = () => {
+    if (imageLightbox) imageLightbox.hidden = true;
+    if (sizeGuide) sizeGuide.hidden = true;
+    document.body.classList.remove('modal-open');
+  };
+  document.querySelectorAll('[data-lightbox-image]').forEach(button => button.addEventListener('click', () => {
+    const source = button.dataset.lightboxImage;
+    if (!source || !imageLightbox) return;
+    document.getElementById('productLightboxImage').src = source;
+    document.getElementById('productLightboxTitle').textContent = button.dataset.lightboxTitle || 'Producto';
+    imageLightbox.hidden = false;
+    document.body.classList.add('modal-open');
+  }));
+  document.querySelectorAll('[data-open-size-guide]').forEach(button => button.addEventListener('click', event => {
+    event.preventDefault();
+    if (!sizeGuide) return;
+    sizeGuide.hidden = false;
+    document.body.classList.add('modal-open');
+  }));
+  document.querySelectorAll('[data-close-product-modal]').forEach(button => button.addEventListener('click', closeProductModals));
+  [imageLightbox, sizeGuide].forEach(modal => modal?.addEventListener('click', event => {
+    if (event.target === modal) closeProductModals();
+  }));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeProductModals(); });
   setTimeout(()=>document.querySelectorAll('.toast').forEach(x=>x.remove()),5000);
 });
 function escapeHtml(value){const d=document.createElement('div');d.textContent=value??'';return d.innerHTML}

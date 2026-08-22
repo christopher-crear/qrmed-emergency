@@ -21,10 +21,13 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .decorators import admin_required, authenticated_required
 from .forms import (
-    BankAccountForm, OrderUpdateForm, PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm,
+    BankAccountForm, DiscountCampaignForm, OrderUpdateForm, PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm,
     PaymentSettingForm, ProductForm, ProfileForm,
 )
-from .models import BankAccount, MedicalDocument, Order, OrderItem, Patient, PaymentSetting, Product, Profile
+from .models import (
+    BankAccount, DiscountCampaign, DiscountTicket, MedicalDocument, Order, OrderItem,
+    Patient, PaymentSetting, Product, Profile,
+)
 from .pagination import paginate_items
 from .services import (
     SupabaseError, get_auth_user, sign_in, storage_image_bytes, storage_image_signed_url, storage_signed_url,
@@ -578,6 +581,7 @@ def global_search(request):
         ("Usuarios", "Accesos y permisos", "users"),
         ("Perfil", "Datos de la cuenta", "profile"),
         ("Bancos y cuentas", "Datos para recibir pagos", "banks"),
+        ("Tickets de descuento", "Campañas, códigos y límites", "discounts"),
         ("Configuración", "Preferencias y notificaciones", "configuration"),
     ]
     results = [
@@ -858,6 +862,87 @@ def product_delete(request, product_id):
     product.delete()
     messages.success(request, "Producto eliminado.")
     return redirect("products")
+
+
+def _new_discount_code():
+    for _ in range(30):
+        code = f"QRMED-{secrets.token_hex(3).upper()}"
+        if not DiscountCampaign.objects.filter(code__iexact=code).exists():
+            return code
+    return f"QRMED-{uuid.uuid4().hex[:10].upper()}"
+
+
+@admin_required
+def discounts(request):
+    schema_ready = True
+    campaigns = []
+    editing = None
+    requested_id = request.POST.get("campaign_id") if request.method == "POST" else request.GET.get("edit")
+    try:
+        if requested_id:
+            editing = DiscountCampaign.objects.filter(id=requested_id).first()
+        campaigns = list(DiscountCampaign.objects.all())
+    except (DatabaseError, ValueError):
+        schema_ready = False
+
+    instance = editing or DiscountCampaign(id=uuid.uuid4(), is_active=True, max_claims=10)
+    form = DiscountCampaignForm(request.POST or None, instance=instance)
+    if request.method == "POST":
+        if not schema_ready:
+            messages.error(request, "Primero ejecuta supabase_descuentos.sql en Supabase.")
+        elif form.is_valid():
+            campaign = form.save(commit=False)
+            is_new = editing is None
+            if is_new:
+                campaign.id = instance.id or uuid.uuid4()
+                campaign.created_by = request.admin_profile.id
+                campaign.created_at = timezone.now()
+            campaign.code = campaign.code or _new_discount_code()
+            campaign.updated_at = timezone.now()
+            try:
+                campaign.save(force_insert=is_new)
+            except DatabaseError:
+                messages.error(request, "No se pudo guardar. Verifica que el código no esté repetido.")
+            else:
+                messages.success(request, "Campaña de tickets creada." if is_new else "Campaña actualizada.")
+                return redirect("discounts")
+        else:
+            messages.error(request, "Revisa los datos del ticket.")
+
+    now = timezone.now()
+    if schema_ready:
+        for campaign in campaigns:
+            campaign.claimed_count = DiscountTicket.objects.filter(campaign_id=campaign.id).count()
+            campaign.used_count = DiscountTicket.objects.filter(campaign_id=campaign.id, used_at__isnull=False).count()
+            campaign.remaining_count = max(0, campaign.max_claims - campaign.claimed_count)
+            campaign.is_available_now = bool(
+                campaign.is_active
+                and (not campaign.starts_at or campaign.starts_at <= now)
+                and (not campaign.expires_at or campaign.expires_at > now)
+                and campaign.remaining_count > 0
+            )
+    pagination = paginate_items(request, campaigns)
+    return render(request, "panel/discounts.html", {
+        "form": form,
+        "campaigns": pagination.pop("items"),
+        "editing": editing,
+        "schema_ready": schema_ready,
+        "campaigns_total": len(campaigns),
+        "tickets_total": sum(getattr(item, "claimed_count", 0) for item in campaigns),
+        "tickets_available": sum(getattr(item, "remaining_count", 0) for item in campaigns if item.is_active),
+        **pagination,
+    })
+
+
+@admin_required
+@require_POST
+def discount_toggle(request, campaign_id):
+    campaign = get_object_or_404(DiscountCampaign, id=campaign_id)
+    campaign.is_active = not campaign.is_active
+    campaign.updated_at = timezone.now()
+    campaign.save(update_fields=["is_active", "updated_at"])
+    messages.success(request, "Campaña activada." if campaign.is_active else "Campaña pausada.")
+    return redirect("discounts")
 
 
 @admin_required

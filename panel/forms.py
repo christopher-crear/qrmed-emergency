@@ -4,7 +4,7 @@ from functools import lru_cache
 from django import forms
 from django.db import connection
 
-from .models import BankAccount, Order, Patient, PaymentSetting, Product, Profile
+from .models import BankAccount, DiscountCampaign, Order, Patient, PaymentSetting, Product, Profile
 from .value_utils import humanize_value
 
 
@@ -282,6 +282,48 @@ class OrderUpdateForm(StyledFormMixin, forms.ModelForm):
             "estimated_delivery": forms.DateInput(attrs={"type": "date"}),
             "tracking_number": forms.TextInput(attrs={"readonly": True}),
         }
+
+
+class DiscountCampaignForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = DiscountCampaign
+        fields = [
+            "title", "code", "description", "discount_type", "discount_value",
+            "min_order_amount", "max_claims", "starts_at", "expires_at", "is_active",
+        ]
+        widgets = {
+            "title": forms.TextInput(attrs={"placeholder": "Ej. Descuento de lanzamiento"}),
+            "code": forms.TextInput(attrs={"placeholder": "Se genera automáticamente si lo dejas vacío"}),
+            "description": forms.Textarea(attrs={"rows": 3, "placeholder": "Mensaje que verá el usuario"}),
+            "discount_value": forms.NumberInput(attrs={"min": "0.01", "step": "0.01"}),
+            "min_order_amount": forms.NumberInput(attrs={"min": "0", "step": "0.01"}),
+            "max_claims": forms.NumberInput(attrs={"min": "1"}),
+            "starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+            "expires_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["code"].required = False
+        self.fields["starts_at"].required = False
+        self.fields["expires_at"].required = False
+        for field_name in ("starts_at", "expires_at"):
+            self.fields[field_name].input_formats = ["%Y-%m-%dT%H:%M"]
+
+    def clean_code(self):
+        value = str(self.cleaned_data.get("code") or "").strip().upper()
+        return re.sub(r"[^A-Z0-9-]", "", value)[:40]
+
+    def clean(self):
+        data = super().clean()
+        discount_type = data.get("discount_type")
+        value = data.get("discount_value")
+        if discount_type == "percentage" and value is not None and value > 100:
+            self.add_error("discount_value", "El porcentaje no puede superar el 100 %.")
+        starts_at, expires_at = data.get("starts_at"), data.get("expires_at")
+        if starts_at and expires_at and expires_at <= starts_at:
+            self.add_error("expires_at", "La fecha de finalización debe ser posterior al inicio.")
+        return data
 
 
 class ProfileForm(StyledFormMixin, forms.ModelForm):
