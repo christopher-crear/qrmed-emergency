@@ -82,6 +82,42 @@ def sign_in(email, password):
     return response.json()
 
 
+def sign_up(email, password, first_name, last_name, phone):
+    """Crea una cuenta de paciente mediante Supabase Auth sin guardar la clave."""
+    if settings.DEMO_MODE:
+        user_id = str(uuid.uuid4())
+        return {
+            "user": {"id": user_id, "email": email},
+            "access_token": "",
+            "refresh_token": "",
+        }
+    payload = {
+        "email": email,
+        "password": password,
+        "data": {
+            "full_name": f"{first_name} {last_name}".strip(),
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone": phone,
+        },
+    }
+    try:
+        response = requests.post(
+            f"{settings.SUPABASE_URL}/auth/v1/signup",
+            headers=_auth_headers(), json=payload, timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise SupabaseError("No se pudo conectar con Supabase para crear la cuenta.") from exc
+    if not response.ok:
+        try:
+            body = response.json()
+            detail = body.get("msg") or body.get("message") or body.get("error_description")
+        except ValueError:
+            detail = None
+        raise SupabaseError(detail or "No se pudo crear la cuenta. Verifica el correo ingresado.")
+    return response.json()
+
+
 def get_auth_user(access_token):
     """Obtiene del servidor de Supabase la identidad asociada al token OAuth."""
     if settings.DEMO_MODE:
@@ -108,6 +144,51 @@ def update_password(access_token, new_password):
     )
     if not response.ok:
         raise SupabaseError(response.json().get("msg", "No se pudo actualizar la contraseña."))
+    return True
+
+
+def delete_auth_user(user_id):
+    """Elimina una identidad de Auth desde el servidor usando la service role."""
+    if settings.DEMO_MODE:
+        return True
+    if not settings.SUPABASE_SERVICE_ROLE_KEY:
+        raise SupabaseError("Falta SUPABASE_SERVICE_ROLE_KEY para eliminar la cuenta de forma segura.")
+    try:
+        response = requests.delete(
+            f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+            headers=_auth_headers(service=True), timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise SupabaseError("No se pudo conectar con Supabase Auth para eliminar la cuenta.") from exc
+    if not response.ok:
+        try:
+            detail = response.json().get("msg") or response.json().get("message")
+        except ValueError:
+            detail = None
+        raise SupabaseError(detail or "Supabase no permitió eliminar la cuenta.")
+    return True
+
+
+def delete_storage_files(bucket, paths):
+    """Elimina objetos conocidos antes de borrar una identidad de Auth."""
+    normalized = []
+    for path in paths:
+        value = normalize_storage_path(path, bucket)
+        if value and not value.startswith(("http://", "https://", "/media/")) and value not in normalized:
+            normalized.append(value)
+    if not normalized or settings.DEMO_MODE:
+        return True
+    if not settings.SUPABASE_SERVICE_ROLE_KEY:
+        raise SupabaseError("Falta SUPABASE_SERVICE_ROLE_KEY para eliminar los archivos de la cuenta.")
+    try:
+        response = requests.delete(
+            f"{settings.SUPABASE_URL}/storage/v1/object/{bucket}",
+            headers=_auth_headers(service=True), json={"prefixes": normalized}, timeout=20,
+        )
+    except requests.RequestException as exc:
+        raise SupabaseError("No se pudieron eliminar los archivos privados de la cuenta.") from exc
+    if not response.ok:
+        raise SupabaseError("Supabase Storage no permitió eliminar los archivos de la cuenta.")
     return True
 
 
@@ -229,7 +310,9 @@ def _storage_matches_from_api(bucket, identifiers, keywords=()):
     if settings.DEMO_MODE or not settings.SUPABASE_SERVICE_ROLE_KEY:
         return []
     found = []
-    roots = ("", "avatars", "profiles", "profile", "users", "photos")
+    # Las rutas explícitas resuelven el caso normal. Este rescate solo prueba
+    # carpetas frecuentes para evitar decenas de peticiones por cada imagen rota.
+    roots = ("", "profiles", "users", "photos")
     for identifier in [str(value).strip() for value in identifiers if value]:
         queries = [(root, identifier) for root in roots]
         queries.extend(
@@ -246,7 +329,7 @@ def _storage_matches_from_api(bucket, identifiers, keywords=()):
         for prefix, search in queries:
             payload = {
                 "prefix": prefix,
-                "limit": 100,
+                "limit": 30,
                 "offset": 0,
                 "sortBy": {"column": "updated_at", "order": "desc"},
             }
@@ -257,7 +340,7 @@ def _storage_matches_from_api(bucket, identifiers, keywords=()):
                     f"{settings.SUPABASE_URL}/storage/v1/object/list/{bucket}",
                     headers=_auth_headers(service=True),
                     json=payload,
-                    timeout=12,
+                    timeout=5,
                 )
             except requests.RequestException:
                 continue
@@ -312,18 +395,29 @@ def storage_image_signed_url(
     restricción local de `requests` o un encabezado intermedio convierta una
     imagen privada válida en un 404 del proxy de Django.
     """
+    result_cache_key = "storage-image-url:" + sha256(
+        f"{bucket}:{stored_path}:{','.join(str(x) for x in identifiers if x)}:{','.join(keywords)}".encode()
+    ).hexdigest()
+    cached_result = cache.get(result_cache_key)
+    if cached_result == "__missing__":
+        return ""
+    if cached_result:
+        return cached_result
     candidate_groups = [storage_image_candidates(bucket, stored_path, identifiers, keywords)]
     if normalize_storage_path(stored_path, bucket) and any(identifiers):
         candidate_groups.append(storage_image_candidates(bucket, "", identifiers, keywords))
     for candidates in candidate_groups:
         for candidate in candidates:
             if candidate.startswith(("http://", "https://", "/media/")):
+                cache.set(result_cache_key, candidate, timeout=840)
                 return candidate
             signed = storage_signed_url(
                 candidate, bucket, expires_in=expires_in, access_token=access_token,
             )
             if "/storage/v1/object/sign/" in signed:
+                cache.set(result_cache_key, signed, timeout=max(60, expires_in - 60))
                 return signed
+    cache.set(result_cache_key, "__missing__", timeout=300)
     return ""
 
 

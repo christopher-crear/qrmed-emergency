@@ -74,7 +74,7 @@
       <article class="profile-modern-card danger-modern-card">
         <span class="profile-card-icon red"><i data-lucide="triangle-alert"></i></span>
         <h2>Zona de peligro</h2><p>{{ profile_danger_text }}</p>
-        <button type="button" disabled><i data-lucide="trash-2"></i>{% if profile_role_label == 'Paciente' %}Solicitar eliminación{% else %}Eliminar cuenta{% endif %}</button>
+        {% if profile_delete_action %}<form method="post" action="{{ profile_delete_action }}">{% csrf_token %}<label>Contraseña actual<input type="password" name="current_password" required autocomplete="current-password" placeholder="Confirma tu contraseña"></label><button type="submit" data-confirm="Se eliminarán permanentemente tu cuenta, ficha médica, pedidos y facturas." data-confirm-title="¿Eliminar tu cuenta?"><i data-lucide="trash-2"></i>Eliminar mi cuenta</button></form>{% else %}<button type="button" disabled><i data-lucide="trash-2"></i>Eliminar cuenta</button>{% endif %}
       </article>
     </aside>
   </div>

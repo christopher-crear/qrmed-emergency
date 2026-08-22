@@ -7,8 +7,8 @@ from django.db import connection
 from django.utils import timezone
 
 from panel.models import (
-    BankAccount, DiscountCampaign, DiscountTicket, Order, OrderItem, Patient,
-    PaymentSetting, Product, Profile,
+    ActivationRequest, BankAccount, DiscountCampaign, DiscountTicket, Invoice, NotificationRead,
+    Order, OrderItem, Patient, PaymentSetting, Product, Profile,
 )
 
 
@@ -34,6 +34,9 @@ class Command(BaseCommand):
             """CREATE TABLE IF NOT EXISTS bank_accounts (id varchar(36) PRIMARY KEY, bank_name text, account_holder text, account_number text, account_type text, tax_id text, instructions text, is_visible bool, display_order integer, logo_path text, qr_path text, created_by varchar(36), created_at datetime, updated_at datetime)""",
             """CREATE TABLE IF NOT EXISTS discount_campaigns (id varchar(36) PRIMARY KEY, code varchar(40) UNIQUE, title varchar(120), description text, discount_type varchar(20), discount_value decimal(12,2), min_order_amount decimal(12,2), max_claims integer, starts_at datetime, expires_at datetime, is_active bool, created_by varchar(36), created_at datetime, updated_at datetime)""",
             """CREATE TABLE IF NOT EXISTS discount_tickets (id varchar(36) PRIMARY KEY, campaign_id varchar(36), user_id varchar(36), claimed_at datetime, used_at datetime, order_id varchar(36), UNIQUE(campaign_id, user_id))""",
+            """CREATE TABLE IF NOT EXISTS notification_reads (id varchar(36) PRIMARY KEY, user_id varchar(36), notification_key varchar(180), read_at datetime, UNIQUE(user_id, notification_key))""",
+            """CREATE TABLE IF NOT EXISTS invoices (id varchar(36) PRIMARY KEY, order_id varchar(36) UNIQUE, user_id varchar(36), invoice_number varchar(50) UNIQUE, issued_at datetime, sent_at datetime, created_by varchar(36))""",
+            """CREATE TABLE IF NOT EXISTS activation_requests (id varchar(36) PRIMARY KEY, user_id varchar(36), email text, message text, status varchar(20), created_at datetime, reviewed_at datetime, reviewed_by varchar(36))""",
         ]
         with connection.cursor() as cursor:
             for statement in statements:

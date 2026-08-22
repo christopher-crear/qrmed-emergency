@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260814-18">
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260822-accounts-v2">
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -23,6 +23,7 @@
       <a href="{% url 'products' %}" class="{% if 'product' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="boxes"></i><span>Productos</span></a>
       <a href="{% url 'orders' %}" class="{% if 'order' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="package"></i><span>Pedidos</span></a>
       <a href="{% url 'users' %}" class="{% if request.resolver_match.url_name == 'users' %}active{% endif %}"><i data-lucide="user-cog"></i><span>Usuarios</span></a>
+      <a href="{% url 'admin_mailbox' %}" class="{% if 'mailbox' in request.resolver_match.url_name or 'activation' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="inbox"></i><span>Buzón</span></a>
       <a href="{% url 'profile' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="user-round"></i><span>Perfil</span></a>
       <a href="{% url 'banks' %}" class="{% if 'bank' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="landmark"></i><span>Bancos y cuentas</span></a>
       <a href="{% url 'discounts' %}" class="{% if 'discount' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="ticket-percent"></i><span>Descuentos</span></a>
@@ -72,8 +73,9 @@
       <div class="button-row"><button class="btn btn-muted" data-confirm-cancel>Cancelar</button><button class="btn btn-danger" data-confirm-ok>Confirmar</button></div>
     </div>
   </div>
+  {% include 'panel/partials/invoice_preview_modal.html' %}
   <script src="{% static 'panel/vendor/lucide.min.js' %}"></script>
-  <script src="{% static 'panel/js/app.js' %}?v=20260814-18"></script>
+  <script src="{% static 'panel/js/app.js' %}?v=20260822-accounts-v2"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

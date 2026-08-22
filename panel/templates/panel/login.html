@@ -15,10 +15,12 @@
       <span class="sr-only">Bienvenido de nuevo</span><h2>Bienvenido de vuelta</h2><p class="muted">Ingresa con tu cuenta de administrador o paciente</p>
       {% if messages %}{% for message in messages %}<div class="alert error">{{ message }}</div>{% endfor %}{% endif %}
       {% if demo_mode %}<div class="alert info"><strong>Acceso de prueba</strong><br>admin@qrmed.ec · admin123</div>{% endif %}
-      <label>Correo electrónico</label><div class="input-icon"><i data-lucide="mail"></i><input type="email" name="email" value="{% if demo_mode %}admin@qrmed.ec{% endif %}" required placeholder="tu@correo.com"></div>
+      <label>Correo electrónico</label><div class="input-icon"><i data-lucide="mail"></i><input type="email" name="email" value="{{ login_email|default_if_none:'' }}{% if demo_mode and not login_email %}admin@qrmed.ec{% endif %}" required placeholder="tu@correo.com"></div>
       <label>Contraseña</label><div class="input-icon"><i data-lucide="lock-keyhole"></i><input id="loginPassword" type="password" name="password" value="{% if demo_mode %}admin123{% endif %}" required><button type="button" aria-label="Mostrar contraseña" onclick="const e=document.getElementById('loginPassword');e.type=e.type==='password'?'text':'password'"><i data-lucide="eye"></i></button></div>
       <div class="login-options"><label><input type="checkbox" name="remember" checked> Recordarme</label><span>¿Olvidaste tu contraseña?</span></div>
-      <button class="btn btn-primary btn-large" type="submit">Iniciar sesión</button>
+      <button class="btn btn-primary btn-large" type="submit" name="action" value="login">Iniciar sesión</button>
+      {% if show_activation_request %}<div class="activation-login-box"><strong>¿Deseas recuperar el acceso?</strong><p>Confirma tu contraseña y envía una solicitud al administrador.</p><button class="btn btn-muted btn-large" type="submit" name="action" value="request_activation"><i data-lucide="user-check"></i> Solicitar activación de cuenta</button></div>{% endif %}
+      <p class="register-login-link">¿Aún no tienes cuenta? <a href="{% url 'register' %}">Regístrate</a></p>
       <div class="social-divider"><span>o continúa con</span></div>
       <div class="social-login-buttons">
         <a href="{% url 'oauth_start' 'google' %}" class="social-login google" aria-label="Continuar con Google"><strong>G</strong> Google</a>
@@ -26,6 +28,7 @@
       </div>
       <small class="social-login-note">Si es tu primera vez, tu cuenta se registrará automáticamente.</small>
       <small class="login-help">El sistema te llevará automáticamente al panel correspondiente a tu rol.</small>
+      <small class="login-legal"><a href="{% url 'terms' %}">Términos</a> · <a href="{% url 'privacy' %}">Privacidad</a></small>
     </form>
   </section>
   <section class="login-visual"><div class="login-qr-art"><i data-lucide="qr-code"></i></div><div class="login-copy"><h1>Siempre preparado</h1><p>Tu código QR único conecta a cualquier médico con tu ficha de emergencia en segundos.</p><div class="blood-chips"><b>O+</b><b>A+</b><b>B−</b><b>AB+</b></div></div></section>
