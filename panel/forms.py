@@ -2,8 +2,6 @@ import re
 from functools import lru_cache
 
 from django import forms
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
 from django.db import connection
 
 from .models import BankAccount, DiscountCampaign, Order, Patient, PaymentSetting, Product, Profile
@@ -127,39 +125,6 @@ class StyledFormMixin:
                     raw_value = getattr(self.instance, name, None)
                 if raw_value not in (None, ""):
                     self.initial[name] = humanize_value(raw_value)
-
-
-class RegistrationForm(StyledFormMixin, forms.Form):
-    first_name = forms.CharField(max_length=80, label="Nombres")
-    last_name = forms.CharField(max_length=80, label="Apellidos")
-    email = forms.EmailField(label="Correo electrónico")
-    phone = forms.CharField(max_length=25, label="Número de teléfono")
-    password = forms.CharField(label="Contraseña", widget=forms.PasswordInput())
-    password_confirm = forms.CharField(label="Confirmar contraseña", widget=forms.PasswordInput())
-    accept_terms = forms.BooleanField(
-        label="Acepto los términos y condiciones y la política de privacidad"
-    )
-
-    def clean_email(self):
-        return str(self.cleaned_data.get("email") or "").strip().lower()
-
-    def clean_phone(self):
-        value = re.sub(r"[^0-9+]", "", str(self.cleaned_data.get("phone") or ""))
-        if len(value.replace("+", "")) < 7:
-            raise forms.ValidationError("Ingresa un número de teléfono válido.")
-        return value
-
-    def clean(self):
-        data = super().clean()
-        password = data.get("password")
-        if password and password != data.get("password_confirm"):
-            self.add_error("password_confirm", "Las contraseñas no coinciden.")
-        if password:
-            try:
-                validate_password(password)
-            except ValidationError as exc:
-                self.add_error("password", exc)
-        return data
 
 
 class PatientPersonalForm(StyledFormMixin, forms.ModelForm):

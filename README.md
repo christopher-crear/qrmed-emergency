@@ -160,11 +160,6 @@ Variables requeridas en producción:
 | `SUPABASE_URL` | `https://PROJECT_REF.supabase.co` |
 | `SUPABASE_ANON_KEY` | Clave anon de Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | Clave secreta solo del servidor |
-| `QRMED_COMPANY_NAME` | Nombre que aparecerá en las facturas |
-| `QRMED_COMPANY_TAX_ID` | RUC o identificación de la empresa |
-| `QRMED_COMPANY_ADDRESS` | Dirección comercial |
-| `QRMED_COMPANY_PHONE` | Teléfono comercial |
-| `QRMED_COMPANY_EMAIL` | Correo que aparecerá en las facturas |
 
 Después del despliegue revisa `/health/`. Debe responder `{"status":"ok"}`.
 
@@ -190,13 +185,11 @@ render.yaml             Infraestructura de Render
 build.sh                Instalación, estáticos y migraciones
 ```
 
-## 5. Activar descuentos, notificaciones, facturas y reactivaciones en Supabase
+## 5. Activar tickets de descuento en Supabase
 
-Abre **Supabase → SQL Editor**, copia todo el contenido de `supabase_actualizacion_completa.sql` y ejecútalo. El script es idempotente y crea las tablas `discount_campaigns`, `discount_tickets`, `notification_reads`, `invoices` y `activation_requests`, junto con sus índices, restricciones y políticas RLS.
+Antes de usar el módulo **Descuentos**, abre **Supabase → SQL Editor**, copia todo el contenido de `supabase_descuentos.sql` y ejecútalo una sola vez. El script crea las tablas `discount_campaigns` y `discount_tickets`, sus índices, restricciones y políticas RLS.
 
-Este script no crea una clave foránea hacia `public.orders`, por lo que también funciona en proyectos donde la tabla de pedidos usa otro nombre. Esto corrige el error `relation "public.orders" does not exist`.
-
-La aplicación administra campañas desde `/descuentos/`; los pacientes reclaman tickets en `/mi/descuentos/`. Las facturas aprobadas se envían al buzón del cliente desde la validación de pagos. Las solicitudes de reactivación llegan a `/buzon/` y la eliminación confirmada por contraseña borra la identidad mediante Supabase Auth Admin. Nunca expongas `SUPABASE_SERVICE_ROLE_KEY` en el navegador: debe existir únicamente como variable secreta de Render.
+La aplicación administra las campañas desde `/descuentos/`. Los pacientes pueden reclamar tickets en `/mi/descuentos/`, escribir un código en el carrito y aplicar el descuento durante el pago. Nunca expongas `SUPABASE_SERVICE_ROLE_KEY` en el navegador: debe existir únicamente como variable secreta de Render.
 
 ## Referencias oficiales
 

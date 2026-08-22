@@ -96,7 +96,7 @@
             <span class="bank-upload-copy"><strong>Logo del banco <small>(opcional)</small></strong><em>PNG, JPG o WEBP</em></span>
             <span class="bank-upload-button">Seleccionar archivo</span>
             <span class="bank-upload-name" data-bank-file-name>{% if editing_bank.logo_path %}Logo actual cargado{% else %}Sin archivo{% endif %}</span>
-            {% if editing_bank.logo_url %}<img class="bank-upload-preview" src="{{ editing_bank.logo_url }}" alt="Logo actual de {{ editing_bank.bank_name }}" loading="lazy" decoding="async">{% endif %}
+            {% if editing_bank.logo_url %}<img class="bank-upload-preview" src="{{ editing_bank.logo_url }}" alt="Logo actual de {{ editing_bank.bank_name }}">{% endif %}
             {% for error in form.logo.errors %}<b class="bank-upload-error">{{ error }}</b>{% endfor %}
           </label>
           <label class="bank-upload" data-bank-upload>
@@ -105,7 +105,7 @@
             <span class="bank-upload-copy"><strong>Código QR <small>(opcional)</small></strong><em>Imagen nítida y cuadrada</em></span>
             <span class="bank-upload-button">Seleccionar archivo</span>
             <span class="bank-upload-name" data-bank-file-name>{% if editing_bank.qr_path %}QR actual cargado{% else %}Sin archivo{% endif %}</span>
-            {% if editing_bank.qr_url %}<img class="bank-upload-preview bank-upload-preview--qr" src="{{ editing_bank.qr_url }}" alt="QR actual de {{ editing_bank.bank_name }}" loading="lazy" decoding="async">{% endif %}
+            {% if editing_bank.qr_url %}<img class="bank-upload-preview bank-upload-preview--qr" src="{{ editing_bank.qr_url }}" alt="QR actual de {{ editing_bank.bank_name }}">{% endif %}
             {% for error in form.qr_image.errors %}<b class="bank-upload-error">{{ error }}</b>{% endfor %}
           </label>
         </div>
@@ -129,7 +129,7 @@
             <article class="bank-account-card">
               <header>
                 <div class="bank-logo-box">
-                  {% if bank.logo_url %}<img src="{{ bank.logo_url }}" alt="Logo {{ bank.bank_name }}" loading="lazy" decoding="async" data-bank-logo>{% else %}<span><i data-lucide="landmark"></i></span>{% endif %}
+                  {% if bank.logo_url %}<img src="{{ bank.logo_url }}" alt="Logo {{ bank.bank_name }}" data-bank-logo>{% else %}<span><i data-lucide="landmark"></i></span>{% endif %}
                 </div>
                 <span class="bank-visibility {% if not bank.is_visible %}is-hidden{% endif %}">{% if bank.is_visible %}Visible{% else %}Oculta{% endif %}</span>
               </header>
@@ -143,7 +143,7 @@
               {% if bank.instructions %}<p class="bank-card-instructions"><i data-lucide="info"></i>{{ bank.instructions }}</p>{% endif %}
               {% if bank.qr_url %}
                 <button class="bank-qr-strip" type="button" data-bank-qr-open data-src="{{ bank.qr_url }}" data-title="{{ bank.bank_name }}">
-                  <img src="{{ bank.qr_url }}" alt="QR {{ bank.bank_name }}" loading="lazy" decoding="async">
+                  <img src="{{ bank.qr_url }}" alt="QR {{ bank.bank_name }}">
                   <span><strong>Código QR disponible</strong><small>Pulsa para ampliar</small></span>
                 </button>
               {% else %}

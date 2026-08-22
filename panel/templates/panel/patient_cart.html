@@ -8,10 +8,10 @@
     <section class="cart-products-v2">
       {% for row in cart_rows %}<article class="patient-card cart-product-v2">
         <button class="cart-product-image" type="button" data-lightbox-image="{{ row.product.image_url }}" data-lightbox-title="{{ row.product.name }}">
-          {% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}" loading="lazy" decoding="async" data-image-fallback><span hidden><i data-lucide="image-off"></i></span>{% else %}<span><i data-lucide="package"></i></span>{% endif %}<em><i data-lucide="zoom-in"></i></em>
+          {% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}" data-image-fallback><span hidden><i data-lucide="image-off"></i></span>{% else %}<span><i data-lucide="package"></i></span>{% endif %}<em><i data-lucide="zoom-in"></i></em>
         </button>
         <div class="cart-product-copy"><h2>{{ row.product.name }}</h2><p><span>{{ row.color|default:'Sin color' }}</span><span>Talla {{ row.size|default:'—' }}</span><span>x{{ row.quantity }}</span></p><button type="button" class="size-guide-link" data-open-size-guide><i data-lucide="ruler"></i> Ver medidas</button><strong>{{ row.line_total|money }}</strong></div>
-        <form method="post" action="{% url 'patient_cart_remove' row.line_key %}">{% csrf_token %}<button class="cart-remove-v2" title="Quitar producto"><i data-lucide="trash-2"></i></button></form>
+        <form method="post" action="{% url 'patient_cart_remove' row.product.id %}">{% csrf_token %}<button class="cart-remove-v2" title="Quitar producto"><i data-lucide="trash-2"></i></button></form>
       </article>{% endfor %}
     </section>
 

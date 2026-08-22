@@ -257,53 +257,6 @@ class DiscountTicket(ExistingTable):
         ordering = ["-claimed_at"]
 
 
-class NotificationRead(ExistingTable):
-    """Marca una notificación calculada como leída para una cuenta."""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
-    user_id = models.UUIDField()
-    notification_key = models.CharField(max_length=180)
-    read_at = models.DateTimeField(blank=True, null=True)
-
-    class Meta(ExistingTable.Meta):
-        db_table = "notification_reads"
-        ordering = ["-read_at"]
-
-
-class Invoice(ExistingTable):
-    """Factura interna emitida para un pedido con pago aprobado."""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
-    order_id = models.UUIDField()
-    user_id = models.UUIDField()
-    invoice_number = models.CharField(max_length=50, unique=True)
-    issued_at = models.DateTimeField(blank=True, null=True)
-    sent_at = models.DateTimeField(blank=True, null=True)
-    created_by = models.UUIDField(blank=True, null=True)
-
-    class Meta(ExistingTable.Meta):
-        db_table = "invoices"
-        ordering = ["-issued_at"]
-
-
-class ActivationRequest(ExistingTable):
-    """Solicitud de un usuario bloqueado para recuperar el acceso."""
-
-    STATUS_CHOICES = [("pending", "Pendiente"), ("approved", "Aprobada"), ("rejected", "Rechazada")]
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4)
-    user_id = models.UUIDField()
-    email = models.TextField(blank=True, null=True)
-    message = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    created_at = models.DateTimeField(blank=True, null=True)
-    reviewed_at = models.DateTimeField(blank=True, null=True)
-    reviewed_by = models.UUIDField(blank=True, null=True)
-
-    class Meta(ExistingTable.Meta):
-        db_table = "activation_requests"
-        ordering = ["-created_at"]
-
-
 class PaymentSetting(ExistingTable):
     id = models.BooleanField(primary_key=True, default=True)
     bank_name = models.TextField(blank=True, null=True)

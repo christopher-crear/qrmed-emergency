@@ -34,29 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelector('[data-close-onboarding]')?.addEventListener('click', () => document.getElementById('medicalOnboarding')?.remove());
 
-  const invoiceModal = document.getElementById('invoicePreviewModal');
-  const invoiceFrame = document.getElementById('invoicePreviewFrame');
-  const closeInvoicePreview = () => {
-    if (!invoiceModal) return;
-    invoiceModal.hidden = true;
-    if (invoiceFrame) invoiceFrame.src = 'about:blank';
-    document.body.classList.remove('modal-open');
-  };
-  document.querySelectorAll('[data-invoice-preview]').forEach(button => {
-    const openInvoice = event => {
-      event.preventDefault(); event.stopPropagation();
-      if (!invoiceModal || !invoiceFrame || !button.dataset.invoicePreview) return;
-      invoiceFrame.src = button.dataset.invoicePreview;
-      invoiceModal.hidden = false;
-      document.body.classList.add('modal-open');
-    };
-    button.addEventListener('click', openInvoice);
-    button.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') openInvoice(event);
-    });
-  });
-  document.querySelectorAll('[data-close-invoice-preview]').forEach(button => button.addEventListener('click', closeInvoicePreview));
-
   document.querySelectorAll('[data-confirm]').forEach(button => button.addEventListener('click', event => {
     event.preventDefault(); const form=button.closest('form'), dialog=document.getElementById('confirmDialog');
     document.getElementById('confirmTitle').textContent=button.dataset.confirmTitle||'¿Confirmar acción?';
@@ -79,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const closeQr = () => { if(qrModal){ qrModal.hidden = true; document.body.classList.remove('modal-open'); } };
   qrModal?.querySelector('[data-close-qr]')?.addEventListener('click', closeQr);
   qrModal?.addEventListener('click', event => { if(event.target === qrModal) closeQr(); });
-  document.addEventListener('keydown', event => { if(event.key === 'Escape'){ closeQr(); closeInvoicePreview(); } });
+  document.addEventListener('keydown', event => { if(event.key === 'Escape') closeQr(); });
   document.getElementById('downloadQr')?.addEventListener('click', () => {
     if(!currentQr) return; const link=document.createElement('a'); link.href=currentQr.image; link.download=`QR-${currentQr.name.replaceAll(' ','-')}.png`; document.body.appendChild(link); link.click(); link.remove();
   });

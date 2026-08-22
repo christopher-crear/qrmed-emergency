@@ -11,29 +11,26 @@ from urllib.parse import urlencode, urlparse
 
 from django.conf import settings
 from django.contrib import messages
-from django.core.cache import cache
 from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F, Q, Sum
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from .decorators import admin_required, authenticated_required
 from .forms import (
     BankAccountForm, DiscountCampaignForm, OrderUpdateForm, PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm,
-    PaymentSettingForm, ProductForm, ProfileForm, RegistrationForm,
+    PaymentSettingForm, ProductForm, ProfileForm,
 )
-from .invoice_pdf import build_invoice_pdf
 from .models import (
-    ActivationRequest, BankAccount, DiscountCampaign, DiscountTicket, Invoice, MedicalDocument,
-    NotificationRead, Order, OrderItem, Patient, PaymentSetting, Product, Profile,
+    BankAccount, DiscountCampaign, DiscountTicket, MedicalDocument, Order, OrderItem,
+    Patient, PaymentSetting, Product, Profile,
 )
 from .pagination import paginate_items
 from .services import (
-    SupabaseError, get_auth_user, sign_in, sign_up, storage_image_bytes, storage_image_signed_url, storage_signed_url,
+    SupabaseError, get_auth_user, sign_in, storage_image_bytes, storage_image_signed_url, storage_signed_url,
     update_password, upload_file, versioned_media_url,
 )
 
@@ -90,10 +87,6 @@ def _order_context(order):
     proof_url = storage_signed_url(order.payment_proof_path, settings.SUPABASE_PAYMENT_BUCKET)
     proof_name = Path(urlparse(str(order.payment_proof_path or "")).path).name or "comprobante"
     proof_is_pdf = proof_name.lower().endswith(".pdf")
-    try:
-        invoice = Invoice.objects.filter(order_id=order.id).first()
-    except DatabaseError:
-        invoice = None
     return {
         "order": order,
         "items": items,
@@ -107,22 +100,7 @@ def _order_context(order):
         "proof_name": proof_name,
         "proof_is_pdf": proof_is_pdf,
         "customer_avatar_url": _customer_avatar_url(patient, profile),
-        "invoice": invoice,
     }
-
-
-def _ensure_invoice(order, created_by=None):
-    """Crea una sola factura por pedido; el PDF se genera bajo demanda."""
-    issued_at = order.payment_reviewed_at or timezone.now()
-    invoice, _ = Invoice.objects.get_or_create(
-        order_id=order.id,
-        defaults={
-            "id": uuid.uuid4(), "user_id": order.user_id,
-            "invoice_number": f"FAC-{order.order_number}"[:50],
-            "issued_at": issued_at, "created_by": created_by,
-        },
-    )
-    return invoice
 
 
 def generate_delivery_code():
@@ -144,15 +122,8 @@ def ensure_order_delivery_code(order):
 
 def _orders_context(request):
     q = request.GET.get("q", "").strip()
-    status = request.GET.get("status", "active").strip().lower()
-    if status not in {"active", "delivered"}:
-        status = "active"
-    base_queryset = Order.objects.all()
-    if status == "delivered":
-        base_queryset = base_queryset.filter(status="delivered")
-    else:
-        base_queryset = base_queryset.exclude(status="delivered")
-    orders_list = list(base_queryset)
+    status = request.GET.get("status", "all").strip().lower()
+    orders_list = list(Order.objects.all())
     owner_ids = {order.user_id for order in orders_list}
     patients = _patient_map(owner_ids)
     profile_ids = owner_ids | {patient.owner_id for patient in patients.values() if patient.owner_id}
@@ -165,15 +136,6 @@ def _orders_context(request):
         str(product.id): product
         for product in Product.objects.filter(id__in=[item.product_id for item in items if item.product_id])
     }
-    invoice_map = {}
-    if status == "delivered":
-        try:
-            invoice_map = {
-                str(invoice.order_id): invoice
-                for invoice in Invoice.objects.filter(order_id__in=[order.id for order in orders_list])
-            }
-        except DatabaseError:
-            invoice_map = {}
 
     rows = []
     for order in orders_list:
@@ -187,6 +149,8 @@ def _orders_context(request):
         customer_name = patient.full_name if patient else (profile.full_name if profile else "Usuario sin perfil")
         customer_id = patient.id_number if patient else (profile.phone if profile else "")
         normalized_status = str(order.status or "pending").lower()
+        if status != "all" and normalized_status != status:
+            continue
         haystack = " ".join(filter(None, [order.order_number, customer_name, customer_id, product.name if product else ""]))
         if len(q) >= 2 and q.lower() not in haystack.lower():
             continue
@@ -199,7 +163,6 @@ def _orders_context(request):
             "items": order_items,
             "first_item": first_item,
             "product": product,
-            "invoice": invoice_map.get(str(order.id)),
         })
     pagination = paginate_items(request, rows)
     return {
@@ -322,67 +285,6 @@ def landing(request):
     return render(request, "panel/landing.html")
 
 
-def terms(request):
-    return render(request, "panel/terms.html")
-
-
-def privacy(request):
-    return render(request, "panel/privacy.html")
-
-
-def register(request):
-    if request.session.get("supabase_user_id"):
-        return redirect("patient_dashboard")
-    form = RegistrationForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        data = form.cleaned_data
-        try:
-            result = sign_up(
-                data["email"], data["password"], data["first_name"],
-                data["last_name"], data["phone"],
-            )
-            user = result.get("user") or {}
-            user_id = uuid.UUID(str(user.get("id")))
-            now = timezone.now()
-            full_name = f"{data['first_name']} {data['last_name']}".strip()
-            with transaction.atomic():
-                profile, _ = Profile.objects.update_or_create(
-                    id=user_id,
-                    defaults={
-                        "full_name": full_name, "phone": data["phone"],
-                        "role": "usuario", "is_active": True,
-                        "preferences": {"medical_profile_pending": True},
-                        "updated_at": now,
-                    },
-                )
-                if not profile.created_at:
-                    profile.created_at = now
-                    profile.save(update_fields=["created_at"])
-                if not Patient.objects.filter(Q(owner_id=user_id) | Q(id=user_id)).exists():
-                    Patient(
-                        id=uuid.uuid4(), owner_id=user_id,
-                        first_name=data["first_name"], last_name=data["last_name"],
-                        id_number=f"PEND-{uuid.uuid4().hex[:12].upper()}",
-                        email=data["email"], phone=data["phone"], qr_token=uuid.uuid4(),
-                        status="active", created_at=now, updated_at=now,
-                    ).save(force_insert=True)
-        except (SupabaseError, DatabaseError, IntegrityError, TypeError, ValueError) as exc:
-            messages.error(request, str(exc) or "No se pudo completar el registro.")
-        else:
-            if result.get("access_token"):
-                request.session.cycle_key()
-                request.session["supabase_user_id"] = str(user_id)
-                request.session["supabase_email"] = data["email"]
-                request.session["supabase_access_token"] = result.get("access_token", "")
-                request.session["supabase_refresh_token"] = result.get("refresh_token", "")
-                request.session["account_role"] = "usuario"
-                messages.success(request, "Cuenta creada. Completa ahora tu ficha médica.")
-                return redirect("patient_medical_record", step=1)
-            messages.success(request, "Cuenta creada. Revisa tu correo para confirmarla e iniciar sesión.")
-            return redirect("login")
-    return render(request, "panel/register.html", {"form": form})
-
-
 def login_view(request):
     if request.session.get("supabase_user_id"):
         profile_obj = Profile.objects.filter(id=request.session["supabase_user_id"]).first()
@@ -398,36 +300,8 @@ def login_view(request):
             result = sign_in(email, password)
             user = result["user"]
             profile_obj = Profile.objects.filter(id=user["id"]).first()
-            if not profile_obj:
-                raise SupabaseError("Esta cuenta no tiene un perfil válido.")
-            if not profile_obj.is_active:
-                if request.POST.get("action") == "request_activation":
-                    try:
-                        pending_request = ActivationRequest.objects.filter(
-                            user_id=profile_obj.id, status="pending",
-                        ).first()
-                        if pending_request:
-                            pending_request.email = user.get("email", email)
-                            pending_request.message = "El cliente solicita reactivar su cuenta."
-                            pending_request.created_at = timezone.now()
-                            pending_request.save(update_fields=["email", "message", "created_at"])
-                        else:
-                            ActivationRequest(
-                                id=uuid.uuid4(), user_id=profile_obj.id,
-                                email=user.get("email", email),
-                                message="El cliente solicita reactivar su cuenta.",
-                                status="pending", created_at=timezone.now(),
-                            ).save(force_insert=True)
-                        for admin_id in Profile.objects.filter(
-                            role__in=["admin", "administrador"], is_active=True,
-                        ).values_list("id", flat=True):
-                            cache.delete(f"qrmed-notifications:{admin_id}")
-                    except DatabaseError:
-                        raise SupabaseError("Falta activar el módulo de solicitudes. Ejecuta supabase_actualizacion_completa.sql.")
-                    messages.success(request, "Solicitud enviada. El administrador la revisará desde su buzón.")
-                    return render(request, "panel/login.html", {"login_email": email})
-                messages.error(request, "Tu cuenta está inactiva. Puedes solicitar su reactivación.")
-                return render(request, "panel/login.html", {"show_activation_request": True, "login_email": email})
+            if not profile_obj or not profile_obj.is_active:
+                raise SupabaseError("Esta cuenta no tiene un perfil activo.")
             role = (profile_obj.role or "").lower()
             if role not in {"admin", "administrador", "user", "usuario", "patient", "paciente"}:
                 raise SupabaseError("El rol de esta cuenta no está habilitado.")
@@ -442,7 +316,7 @@ def login_view(request):
             return redirect("dashboard" if role in {"admin", "administrador"} else "patient_dashboard")
         except SupabaseError as exc:
             messages.error(request, str(exc))
-    return render(request, "panel/login.html", {"login_email": request.POST.get("email", "") if request.method == "POST" else ""})
+    return render(request, "panel/login.html")
 
 
 def oauth_start(request, provider):
@@ -530,26 +404,6 @@ def logout_view(request):
     return redirect("login")
 
 
-@authenticated_required
-def notification_read(request):
-    key = str(request.GET.get("key") or "").strip()[:180]
-    destination = str(request.GET.get("next") or "").strip()
-    fallback = "dashboard" if (request.account_profile.role or "").lower() in {"admin", "administrador"} else "patient_dashboard"
-    if key:
-        try:
-            NotificationRead.objects.get_or_create(
-                user_id=request.account_profile.id,
-                notification_key=key,
-                defaults={"id": uuid.uuid4(), "read_at": timezone.now()},
-            )
-            cache.delete(f"qrmed-notifications:{request.account_profile.id}")
-        except DatabaseError:
-            pass
-    if not url_has_allowed_host_and_scheme(destination, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
-        destination = reverse(fallback)
-    return redirect(destination)
-
-
 @require_GET
 def health(request):
     try:
@@ -572,7 +426,7 @@ def patient_photo_image(request, patient_id):
     )
     if signed_url:
         response = HttpResponseRedirect(signed_url)
-        response["Cache-Control"] = "private, max-age=300"
+        response["Cache-Control"] = "private, no-store, max-age=0"
         return response
     image = storage_image_bytes(
         settings.SUPABASE_PATIENT_BUCKET,
@@ -584,7 +438,7 @@ def patient_photo_image(request, patient_id):
         return HttpResponse(status=404)
     content, content_type = image
     response = HttpResponse(content, content_type=content_type)
-    response["Cache-Control"] = "private, max-age=300"
+    response["Cache-Control"] = "private, no-store, max-age=0"
     return response
 
 
@@ -612,7 +466,7 @@ def bank_asset_image(request, bank_id, kind):
     )
     if signed_url:
         response = HttpResponseRedirect(signed_url)
-        response["Cache-Control"] = "private, max-age=300"
+        response["Cache-Control"] = "private, no-store, max-age=0"
         return response
     image = storage_image_bytes(
         settings.SUPABASE_BANK_BUCKET,
@@ -625,7 +479,7 @@ def bank_asset_image(request, bank_id, kind):
         return HttpResponse(status=404)
     content, content_type = image
     response = HttpResponse(content, content_type=content_type)
-    response["Cache-Control"] = "private, max-age=300"
+    response["Cache-Control"] = "private, no-store, max-age=0"
     return response
 
 
@@ -645,7 +499,7 @@ def profile_avatar_image(request, profile_id):
     )
     if signed_url:
         response = HttpResponseRedirect(signed_url)
-        response["Cache-Control"] = "private, max-age=300"
+        response["Cache-Control"] = "private, no-store, max-age=0"
         return response
     image = storage_image_bytes(
         settings.SUPABASE_PROFILE_BUCKET,
@@ -658,7 +512,7 @@ def profile_avatar_image(request, profile_id):
         return HttpResponse(status=404)
     content, content_type = image
     response = HttpResponse(content, content_type=content_type)
-    response["Cache-Control"] = "private, max-age=300"
+    response["Cache-Control"] = "private, no-store, max-age=0"
     return response
 
 
@@ -678,7 +532,7 @@ def profile_cover_image(request, profile_id):
     )
     if signed_url:
         response = HttpResponseRedirect(signed_url)
-        response["Cache-Control"] = "private, max-age=300"
+        response["Cache-Control"] = "private, no-store, max-age=0"
         return response
     image = storage_image_bytes(
         settings.SUPABASE_PROFILE_BUCKET,
@@ -691,7 +545,7 @@ def profile_cover_image(request, profile_id):
         return HttpResponse(status=404)
     content, content_type = image
     response = HttpResponse(content, content_type=content_type)
-    response["Cache-Control"] = "private, max-age=300"
+    response["Cache-Control"] = "private, no-store, max-age=0"
     return response
 
 
@@ -855,8 +709,6 @@ def patient_delete(request, patient_id):
 def public_patient(request, token):
     patient = get_object_or_404(Patient, qr_token=token)
     profile_obj = Profile.objects.filter(id=patient.owner_id).first()
-    if patient.status != "active" or (profile_obj and not profile_obj.is_active):
-        return render(request, "panel/public_patient_inactive.html", status=403)
     preferences = profile_obj.preferences if profile_obj and isinstance(profile_obj.preferences, dict) else {}
     if preferences.get("public_profile", True) is False:
         return HttpResponse("Esta ficha de emergencia está configurada como privada.", status=403)
@@ -944,70 +796,7 @@ def payment_review(request, order_id, action):
         return redirect("payments")
     order.updated_at = timezone.now()
     order.save()
-    if action == "approve":
-        try:
-            _ensure_invoice(order, request.admin_profile.id)
-        except DatabaseError:
-            messages.warning(request, "El pago se aprobó, pero debes ejecutar supabase_actualizacion_completa.sql para generar la factura.")
-        cache.delete(f"qrmed-notifications:{order.user_id}")
-        return redirect("payment_detail", order_id=order.id)
     return redirect("payments")
-
-
-@admin_required
-@require_POST
-def invoice_send(request, order_id):
-    order = get_object_or_404(Order, id=order_id)
-    if not order.payment_reviewed_at or order.payment_rejection_reason:
-        messages.error(request, "Primero debes aprobar el pago.")
-        return redirect("payment_detail", order_id=order.id)
-    try:
-        invoice = _ensure_invoice(order, request.admin_profile.id)
-        if not invoice.sent_at:
-            invoice.sent_at = timezone.now()
-            invoice.save(update_fields=["sent_at"])
-        cache.delete(f"qrmed-notifications:{order.user_id}")
-        messages.success(request, "Factura enviada al buzón del cliente.")
-    except DatabaseError:
-        messages.error(request, "No se pudo enviar la factura. Ejecuta supabase_actualizacion_completa.sql en Supabase.")
-    return redirect("payment_detail", order_id=order.id)
-
-
-@authenticated_required
-def invoice_pdf(request, invoice_id):
-    invoice = get_object_or_404(Invoice, id=invoice_id)
-    profile = request.account_profile
-    role = str(profile.role or "").lower()
-    if role not in {"admin", "administrador"}:
-        patient_ids = set(Patient.objects.filter(owner_id=profile.id).values_list("id", flat=True))
-        if invoice.user_id not in {profile.id, *patient_ids}:
-            return HttpResponse("No autorizado", status=403)
-    order = get_object_or_404(Order, id=invoice.order_id)
-    items = list(OrderItem.objects.filter(order_id=order.id))
-    products = {
-        str(product.id): product
-        for product in Product.objects.filter(id__in=[item.product_id for item in items if item.product_id])
-    }
-    patient = Patient.objects.filter(Q(owner_id=order.user_id) | Q(id=order.user_id)).order_by("-created_at").first()
-    customer = patient or Profile.objects.filter(id=order.user_id).first()
-    payment = PaymentSetting.objects.first()
-    company = {
-        "name": settings.QRMED_COMPANY_NAME,
-        "tax_id": getattr(payment, "tax_id", "") or settings.QRMED_COMPANY_TAX_ID,
-        "address": settings.QRMED_COMPANY_ADDRESS,
-        "phone": settings.QRMED_COMPANY_PHONE,
-        "email": getattr(payment, "notification_email", "") or settings.QRMED_COMPANY_EMAIL,
-    }
-    payload = build_invoice_pdf(
-        invoice=invoice, order=order, items=items, products=products,
-        customer=customer, company=company,
-    )
-    response = HttpResponse(payload, content_type="application/pdf")
-    disposition = "inline" if request.GET.get("preview") == "1" else "attachment"
-    response["Content-Disposition"] = f'{disposition}; filename="factura-{invoice.invoice_number}.pdf"'
-    response["Cache-Control"] = "private, no-store, max-age=0"
-    response["X-Frame-Options"] = "SAMEORIGIN"
-    return response
 
 
 @admin_required
@@ -1173,17 +962,19 @@ def order_detail(request, order_id):
 @require_POST
 def order_update(request, order_id):
     order = get_object_or_404(Order, id=order_id)
-    if str(order.status or "").lower() == "delivered":
-        messages.info(request, "Un pedido entregado queda cerrado y ya no puede modificarse.")
-        return redirect("order_detail", order_id=order.id)
     original_delivery_code = ensure_order_delivery_code(order)
+    previous_status = str(order.status or "").lower()
     form = OrderUpdateForm(request.POST, instance=order)
     if form.is_valid():
+        requested_status = str(form.cleaned_data.get("status") or "").lower()
+        supplied_code = request.POST.get("delivery_code", "").strip()
+        if requested_status == "delivered" and previous_status != "delivered" and supplied_code != original_delivery_code:
+            messages.error(request, "El código de entrega no coincide. Solicítalo al usuario antes de marcar el pedido como entregado.")
+            return redirect("order_detail", order_id=order.id)
         item = form.save(commit=False)
         item.tracking_number = original_delivery_code
         item.updated_at = timezone.now()
         item.save()
-        cache.delete(f"qrmed-notifications:{order.user_id}")
         messages.success(request, "Pedido actualizado correctamente.")
     else:
         messages.error(request, "No se pudo actualizar el pedido.")
@@ -1194,9 +985,6 @@ def order_update(request, order_id):
 @require_POST
 def order_delete(request, order_id):
     order = get_object_or_404(Order, id=order_id)
-    if str(order.status or "").lower() == "delivered":
-        messages.error(request, "Los pedidos entregados forman parte del historial y no se pueden eliminar.")
-        return redirect("order_detail", order_id=order.id)
     OrderItem.objects.filter(order_id=order.id).delete()
     order.delete()
     messages.success(request, "Pedido eliminado.")
@@ -1255,61 +1043,8 @@ def user_status(request, user_id):
         target.is_active = not target.is_active
         target.updated_at = timezone.now()
         target.save()
-        Patient.objects.filter(Q(owner_id=target.id) | Q(id=target.id)).update(
-            status="active" if target.is_active else "inactive",
-            updated_at=timezone.now(),
-        )
-        cache.delete(f"qrmed-notifications:{target.id}")
         messages.success(request, "Estado de usuario actualizado.")
     return redirect("users")
-
-
-@admin_required
-def admin_mailbox(request):
-    status = request.GET.get("status", "pending").strip().lower()
-    if status not in {"pending", "approved", "rejected", "all"}:
-        status = "pending"
-    try:
-        queryset = ActivationRequest.objects.all()
-        if status != "all":
-            queryset = queryset.filter(status=status)
-        requests_list = list(queryset)
-        profile_map = _profile_map({item.user_id for item in requests_list})
-        rows = [{"request": item, "profile": profile_map.get(str(item.user_id))} for item in requests_list]
-        schema_ready = True
-    except DatabaseError:
-        rows, schema_ready = [], False
-    pagination = paginate_items(request, rows)
-    return render(request, "panel/admin_mailbox.html", {
-        "activation_rows": pagination.pop("items"), "current_status": status,
-        "schema_ready": schema_ready, **pagination,
-    })
-
-
-@admin_required
-@require_POST
-def activation_review(request, request_id, action):
-    if action not in {"approve", "reject"}:
-        messages.error(request, "Acción no válida.")
-        return redirect("admin_mailbox")
-    activation = get_object_or_404(ActivationRequest, id=request_id)
-    if activation.status != "pending":
-        messages.info(request, "Esta solicitud ya fue revisada.")
-        return redirect("admin_mailbox")
-    activation.status = "approved" if action == "approve" else "rejected"
-    activation.reviewed_at = timezone.now()
-    activation.reviewed_by = request.admin_profile.id
-    activation.save(update_fields=["status", "reviewed_at", "reviewed_by"])
-    if action == "approve":
-        Profile.objects.filter(id=activation.user_id).update(is_active=True, updated_at=timezone.now())
-        Patient.objects.filter(Q(owner_id=activation.user_id) | Q(id=activation.user_id)).update(
-            status="active", updated_at=timezone.now(),
-        )
-        messages.success(request, "Cuenta y código QR reactivados.")
-    else:
-        messages.success(request, "Solicitud rechazada.")
-    cache.delete(f"qrmed-notifications:{request.admin_profile.id}")
-    return redirect("admin_mailbox")
 
 
 @admin_required

@@ -1,18 +1,17 @@
 {% load panel_extras %}
 <section class="orders-board-v3{% if patient_mode %} orders-board-v3--patient{% endif %}">
   <header class="orders-board-v3__heading">
-    <div><h1>{% if patient_mode %}Mis pedidos{% elif current_status == 'delivered' %}Pedidos entregados{% else %}Pedidos{% endif %}</h1><p>{% if current_status == 'delivered' %}{{ filtered_count }} entregado{{ filtered_count|pluralize:"s" }}{% else %}{{ orders_total }} pedido{{ orders_total|pluralize:"s" }} realizado{{ orders_total|pluralize:"s" }}{% endif %}</p></div>
+    <div><h1>{% if patient_mode %}Mis pedidos{% else %}Pedidos{% endif %}</h1><p>{{ orders_total }} pedido{{ orders_total|pluralize:"s" }} realizado{{ orders_total|pluralize:"s" }}</p></div>
     <form class="orders-list-search" method="get" data-auto-search>
       <i data-lucide="search"></i><input name="q" value="{{ q }}" autocomplete="off" placeholder="Buscar pedidos..." aria-label="Buscar pedidos">
       {% if not patient_mode %}<input type="hidden" name="status" value="{{ current_status|default:'all' }}">{% endif %}
     </form>
-    {% if not patient_mode %}<a class="btn btn-muted" href="{% if current_status == 'delivered' %}{% url 'orders' %}{% else %}{% url 'orders' %}?status=delivered{% endif %}"><i data-lucide="package-check"></i>{% if current_status == 'delivered' %} Ver todos{% else %} Entregados{% endif %}</a>{% endif %}
   </header>
 
   <div class="orders-board-v3__list">
     {% for row in rows %}{% with step=row.order.status|status_step %}
       {% if patient_mode %}
-        <a class="order-card-v3" href="{% url 'patient_order_detail' row.order.id %}?q={{ q|urlencode }}{% if row.order.status == 'delivered' %}&from=delivered{% endif %}">
+        <a class="order-card-v3" href="{% url 'patient_order_detail' row.order.id %}?q={{ q|urlencode }}">
       {% else %}
         <a class="order-card-v3" href="{% url 'order_detail' row.order.id %}?q={{ q|urlencode }}&status={{ current_status|default:'all' }}">
       {% endif %}
@@ -42,7 +41,6 @@
             </div>
           {% endfor %}
         </div>
-        {% if row.order.status == 'delivered' and row.invoice %}<span class="order-invoice-preview" role="button" tabindex="0" data-invoice-preview="{% url 'invoice_pdf' row.invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar factura</span>{% endif %}
       </a>
     {% endwith %}{% empty %}
       <article class="orders-board-v3__empty">
