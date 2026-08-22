@@ -1,9 +1,10 @@
 from django.conf import settings
 from django.urls import reverse
 
+from django.db import DatabaseError
 from django.db.models import Q
 
-from .models import Patient, Profile
+from .models import Order, Patient, Profile
 from .services import versioned_media_url
 
 
@@ -43,6 +44,63 @@ def admin_context(request):
                 cart_count += max(1, int(item.get("quantity", 1)))
             except (AttributeError, TypeError, ValueError):
                 cart_count += 1
+    preferences = profile.preferences if profile and isinstance(profile.preferences, dict) else {}
+    notifications = []
+    needs_medical_profile = bool(preferences.get("medical_profile_pending"))
+    try:
+        if profile and is_admin:
+            if preferences.get("system_alerts", True):
+                pending_payments = Order.objects.exclude(payment_proof_path__isnull=True).exclude(
+                    payment_proof_path=""
+                ).filter(payment_reviewed_at__isnull=True).filter(
+                    Q(payment_rejection_reason__isnull=True) | Q(payment_rejection_reason="")
+                )[:5]
+                for order in pending_payments:
+                    notifications.append({
+                        "title": "Pago pendiente de verificación",
+                        "text": order.order_number,
+                        "url": reverse("payment_detail", kwargs={"order_id": order.id}),
+                        "icon": "receipt-text",
+                    })
+            if preferences.get("order_updates", True):
+                pending_orders = Order.objects.filter(status__in=["pending", "confirmed"])[:5]
+                for order in pending_orders:
+                    notifications.append({
+                        "title": "Nuevo pedido" if order.status == "pending" else "Pedido confirmado",
+                        "text": order.order_number,
+                        "url": reverse("order_detail", kwargs={"order_id": order.id}),
+                        "icon": "package",
+                    })
+        elif profile and patient:
+            if not patient.birth_date or not patient.blood_type or not patient.emergency_phone:
+                needs_medical_profile = True
+            if needs_medical_profile:
+                notifications.append({
+                    "title": "Completa tu ficha médica",
+                    "text": "Agrega tus datos de emergencia.",
+                    "url": reverse("patient_medical_record", kwargs={"step": 1}),
+                    "icon": "notebook-tabs",
+                })
+            if preferences.get("order_updates", True):
+                patient_orders = Order.objects.filter(
+                    user_id__in={profile.id, patient.id}
+                ).exclude(status__in=["delivered", "cancelled"])[:5]
+                for order in patient_orders:
+                    notifications.append({
+                        "title": "Actualización de pedido",
+                        "text": f"{order.order_number} · {order.status}",
+                        "url": reverse("patient_order_detail", kwargs={"order_id": order.id}),
+                        "icon": "package-check",
+                    })
+            if preferences.get("qr_activity", True) and patient.last_qr_scan_at:
+                notifications.append({
+                    "title": "Tu QR fue escaneado",
+                    "text": patient.last_qr_scan_at.strftime("%d/%m/%Y %H:%M"),
+                    "url": reverse("patient_credential"),
+                    "icon": "scan-line",
+                })
+    except DatabaseError:
+        notifications = []
     return {
         "admin_profile": profile if is_admin else None,
         "session_profile": profile,
@@ -52,5 +110,8 @@ def admin_context(request):
         "admin_avatar_url": avatar_url,
         "session_avatar_url": avatar_url,
         "cart_count": cart_count,
+        "notifications": notifications[:8],
+        "notification_count": len(notifications),
+        "needs_medical_profile": needs_medical_profile,
         "demo_mode": settings.DEMO_MODE,
     }

@@ -1,0 +1,37 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Completando acceso · QRMed Emergency</title>
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}">
+</head>
+<body class="oauth-callback-page">
+  <main class="oauth-callback-card">
+    <span class="oauth-spinner"></span>
+    <h1>Completando tu acceso</h1>
+    <p id="oauthStatus">Estamos validando tu cuenta de forma segura…</p>
+    <a id="oauthBack" href="{% url 'login' %}" hidden>Volver al inicio de sesión</a>
+  </main>
+  <form hidden>{% csrf_token %}</form>
+  <script>
+  (() => {
+    const params = new URLSearchParams(location.hash.slice(1));
+    const status = document.getElementById('oauthStatus');
+    const back = document.getElementById('oauthBack');
+    const fail = message => { status.textContent = message; back.hidden = false; document.querySelector('.oauth-spinner')?.remove(); };
+    const accessToken = params.get('access_token');
+    if (!accessToken) { fail(params.get('error_description') || 'No fue posible completar el acceso social.'); return; }
+    fetch('{% url "oauth_complete" %}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+      body: JSON.stringify({access_token: accessToken, refresh_token: params.get('refresh_token') || ''})
+    }).then(async response => {
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible completar el acceso.');
+      location.replace(data.redirect);
+    }).catch(error => fail(error.message));
+  })();
+  </script>
+</body>
+</html>

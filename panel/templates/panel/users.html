@@ -33,6 +33,7 @@
       </tr>{% empty %}<tr><td colspan="4"><div class="users-empty"><i data-lucide="users"></i><strong>No se encontraron usuarios</strong><span>Escribe al menos dos caracteres para buscar.</span></div></td></tr>{% endfor %}</tbody>
     </table></div>
   </article>
+  {% include 'panel/partials/pagination.html' %}
 
   <aside class="permissions-note"><span><i data-lucide="shield-check"></i></span><div><strong>Seguridad respaldada por Supabase</strong><p>Los cambios de rol y estado se validan nuevamente en el servidor y mediante las políticas RLS de la base de datos.</p></div></aside>
 </section>

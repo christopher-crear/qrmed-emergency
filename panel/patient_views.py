@@ -1,4 +1,5 @@
 import io
+import secrets
 import uuid
 from decimal import Decimal
 
@@ -19,6 +20,7 @@ from .decorators import patient_required
 from .forms import PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm, ProfileForm
 from .credential_pdf import build_credential_pdf
 from .models import BankAccount, Order, OrderItem, PaymentSetting, Product
+from .pagination import paginate_items
 from .services import (
     SupabaseError, sign_in, storage_image_bytes, storage_signed_url, update_password, upload_file,
     versioned_media_url,
@@ -29,6 +31,21 @@ def _patient_orders(request):
     return Order.objects.filter(
         user_id__in={request.user_profile.id, request.patient.id}
     ).order_by("-created_at")
+
+
+def _delivery_code():
+    for _ in range(25):
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        if not Order.objects.filter(tracking_number=code).exists():
+            return code
+    return f"{secrets.randbelow(10_000_000):07d}"
+
+
+def _ensure_delivery_code(order):
+    if not str(order.tracking_number or "").strip():
+        order.tracking_number = _delivery_code()
+        order.updated_at = timezone.now()
+        order.save(update_fields=["tracking_number", "updated_at"])
 
 
 def _order_rows(orders):
@@ -97,7 +114,22 @@ def dashboard(request):
 @patient_required
 def global_search(request):
     query = request.GET.get("q", "").strip()
+    modules = [
+        ("Inicio", "Resumen de mi cuenta", "patient_dashboard"),
+        ("Mi credencial", "Código QR de emergencia", "patient_credential"),
+        ("Comprar pulsera", "Catálogo de productos", "patient_store"),
+        ("Carrito", "Productos seleccionados", "patient_cart"),
+        ("Mi ficha médica", "Datos médicos y contactos", "patient_medical_record"),
+        ("Mis pedidos", "Seguimiento y código de entrega", "patient_orders"),
+        ("Perfil", "Datos de mi cuenta", "patient_profile"),
+        ("Configuración", "Preferencias y notificaciones", "patient_configuration"),
+    ]
     results = []
+    for title, subtitle, url_name in modules:
+        if query and query.casefold() not in f"{title} {subtitle}".casefold():
+            continue
+        url = reverse(url_name, kwargs={"step": 1}) if url_name == "patient_medical_record" else reverse(url_name)
+        results.append({"title": title, "subtitle": subtitle, "url": url})
     if len(query) >= 2:
         for product in Product.objects.filter(name__icontains=query, is_active=True)[:6]:
             results.append({"title": product.name, "subtitle": "Pulsera disponible", "url": reverse("patient_store") + f"?q={query}"})
@@ -180,8 +212,9 @@ def store(request):
     products = Product.objects.filter(is_active=True, stock__gt=0)
     if len(query) >= 2:
         products = products.filter(Q(name__icontains=query) | Q(description__icontains=query))
+    pagination = paginate_items(request, products)
     context = _cart_context(request)
-    context.update({"products": products, "q": query})
+    context.update({"products": pagination.pop("items"), "q": query, **pagination})
     return render(request, "panel/patient_store.html", context)
 
 
@@ -285,7 +318,8 @@ def checkout(request):
                         payment_proof_path=proof_path,
                         shipping_address=shipping["address"], shipping_name=shipping["name"],
                         shipping_city=shipping["city"], shipping_postal=shipping["postal"],
-                        shipping_phone=shipping["phone"], created_at=now, updated_at=now,
+                        shipping_phone=shipping["phone"], tracking_number=_delivery_code(),
+                        created_at=now, updated_at=now,
                     )
                     order.save(force_insert=True)
                     for row in cart_context["cart_rows"]:
@@ -317,6 +351,7 @@ def checkout(request):
 @patient_required
 def checkout_success(request, order_id):
     order = get_object_or_404(_patient_orders(request), id=order_id)
+    _ensure_delivery_code(order)
     row = _order_rows([order])[0]
     return render(request, "panel/patient_checkout_success.html", row)
 
@@ -357,6 +392,11 @@ def medical_record(request, step):
             })
         if step < 3:
             return redirect("patient_medical_record", step=step + 1)
+        preferences = request.user_profile.preferences if isinstance(request.user_profile.preferences, dict) else {}
+        preferences = {**preferences, "medical_profile_pending": False}
+        request.user_profile.preferences = preferences
+        request.user_profile.updated_at = timezone.now()
+        request.user_profile.save(update_fields=["preferences", "updated_at"])
         messages.success(request, "Tu ficha médica se actualizó correctamente.")
         return redirect("patient_dashboard")
     return render(request, "panel/patient_medical_record.html", {"form": form, "step": step})
@@ -370,16 +410,19 @@ def orders(request):
     queryset = base_queryset
     if len(query) >= 2:
         queryset = queryset.filter(order_number__icontains=query)
+    pagination = paginate_items(request, queryset)
     return render(request, "panel/patient_orders.html", {
-        "rows": _order_rows(queryset),
+        "rows": _order_rows(pagination.pop("items")),
         "orders_total": orders_total,
         "q": query,
+        **pagination,
     })
 
 
 @patient_required
 def order_detail(request, order_id):
     order = get_object_or_404(_patient_orders(request), id=order_id)
+    _ensure_delivery_code(order)
     row = _order_rows([order])[0]
     row["proof_url"] = storage_signed_url(
         order.payment_proof_path, settings.SUPABASE_PAYMENT_BUCKET,
@@ -390,8 +433,10 @@ def order_detail(request, order_id):
     row["list_orders_total"] = list_queryset.count()
     if len(query) >= 2:
         list_queryset = list_queryset.filter(order_number__icontains=query)
-    row["list_rows"] = _order_rows(list_queryset)
+    pagination = paginate_items(request, list_queryset)
+    row["list_rows"] = _order_rows(pagination.pop("items"))
     row["list_q"] = query
+    row.update({f"list_{key}": value for key, value in pagination.items()})
     return render(request, "panel/patient_order_detail.html", row)
 
 
@@ -500,6 +545,7 @@ def configuration(request):
     if request.method == "POST":
         boolean_keys = ["order_updates", "qr_activity", "email_news", "system_alerts", "public_profile", "analytics"]
         preferences = {
+            **preferences,
             "language": request.POST.get("language", "es"),
             "theme": request.POST.get("theme", "light"),
             **{key: request.POST.get(key) == "on" for key in boolean_keys},

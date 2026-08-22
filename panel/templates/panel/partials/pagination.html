@@ -1,0 +1,21 @@
+{% if page_obj or per_page == 'all' %}
+<nav class="data-pagination" aria-label="Paginación">
+  <form method="get" class="page-size-form">
+    {% for key, value in request.GET.items %}{% if key != 'page' and key != 'per_page' %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+    <label>Mostrar
+      <select name="per_page" onchange="this.form.submit()">
+        {% for size in page_size_choices %}<option value="{{ size }}" {% if per_page == size %}selected{% endif %}>{{ size }}</option>{% endfor %}
+        <option value="all" {% if per_page == 'all' %}selected{% endif %}>Todos</option>
+      </select>
+    </label>
+    <span>{{ filtered_count }} resultado{{ filtered_count|pluralize:"s" }}</span>
+  </form>
+  {% if page_obj and page_obj.paginator.num_pages > 1 %}
+  <div class="page-links">
+    {% if page_obj.has_previous %}<a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}" aria-label="Página anterior"><i data-lucide="chevron-left"></i></a>{% endif %}
+    <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?{% if pagination_query %}{{ pagination_query }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}" aria-label="Página siguiente"><i data-lucide="chevron-right"></i></a>{% endif %}
+  </div>
+  {% endif %}
+</nav>
+{% endif %}

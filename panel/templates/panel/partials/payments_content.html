@@ -25,4 +25,5 @@
       <td><a class="payment-detail-button" href="{% url 'payment_detail' row.order.id %}?q={{ q|urlencode }}&status={{ current_status }}&method={{ current_method }}"><i data-lucide="eye"></i><span>Ver<br>detalle</span></a></td>
     </tr>{% empty %}<tr><td colspan="8"><div class="payments-empty"><i data-lucide="receipt-text"></i><strong>No hay comprobantes</strong><span>Prueba con otro filtro o término de búsqueda.</span></div></td></tr>{% endfor %}
   </tbody></table></div></article>
+  {% include 'panel/partials/pagination.html' %}
 </section>

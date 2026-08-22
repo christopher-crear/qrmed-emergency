@@ -5,6 +5,9 @@ from . import patient_views, views
 urlpatterns = [
     path("", views.landing, name="landing"),
     path("login/", views.login_view, name="login"),
+    path("login/social/callback/", views.oauth_callback, name="oauth_callback"),
+    path("login/social/completar/", views.oauth_complete, name="oauth_complete"),
+    path("login/social/<str:provider>/", views.oauth_start, name="oauth_start"),
     path("logout/", views.logout_view, name="logout"),
     path("health/", views.health, name="health"),
     path("media/perfiles/<uuid:profile_id>/avatar/", views.profile_avatar_image, name="profile_avatar_image"),

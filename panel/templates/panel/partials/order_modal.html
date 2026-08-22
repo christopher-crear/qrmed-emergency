@@ -27,6 +27,7 @@
         <div><span>Fecha del pedido</span><strong>{{ order.created_at|date:'d/m/Y' }}</strong></div>
         <div><span>Entrega estimada</span><strong>{{ order.estimated_delivery|date:'d/m/Y'|default:'Por definir' }}</strong></div>
         <div><span>Estado</span><strong>{{ order.status|status_label }}</strong></div>
+        <div class="delivery-code-card"><span>Código de entrega</span><strong>{{ order.tracking_number }}</strong><small>{% if patient_mode %}Entrégalo al motorizado únicamente cuando recibas tu pulsera.{% else %}Confírmalo con el cliente al entregar la pulsera.{% endif %}</small></div>
       </div>
 
       {% if patient_mode %}
@@ -43,7 +44,8 @@
           <div class="order-modal-v3__form-grid">
             <div><label for="{{ form.status.id_for_label }}">Estado</label>{{ form.status }}</div>
             <div><label for="{{ form.estimated_delivery.id_for_label }}">Entrega estimada</label>{{ form.estimated_delivery }}</div>
-            <div class="is-full"><label for="{{ form.tracking_number.id_for_label }}">Número de rastreo</label>{{ form.tracking_number }}</div>
+            <div><label for="{{ form.tracking_number.id_for_label }}">Código generado</label>{{ form.tracking_number }}</div>
+            <div><label for="deliveryCode">Confirmar código para entregar</label><input id="deliveryCode" name="delivery_code" inputmode="numeric" maxlength="7" autocomplete="one-time-code" placeholder="Código del usuario"></div>
           </div>
           <div class="order-modal-v3__actions">
             <button type="button" class="btn btn-danger" id="deleteOrderButton"><i data-lucide="trash-2"></i> Eliminar pedido</button>

@@ -6,6 +6,7 @@
   <h1>¡Pedido recibido!</h1>
   <p>Estamos verificando tu comprobante de pago</p>
   <strong class="success-order-number">{{ order.order_number }}</strong>
+  <div class="success-delivery-code"><span>Tu código de entrega</span><strong>{{ order.tracking_number }}</strong><small>Muéstralo al motorizado solamente cuando tengas la pulsera en tus manos.</small></div>
   <div class="success-warning"><i data-lucide="info"></i><span><b>Pago pendiente de validación</b>El administrador revisará tu comprobante y aprobará el pedido. Cuando sea confirmado, tu pulsera pasará automáticamente a producción.</span></div>
   <article class="patient-card success-details">
     <h2>Detalles del pedido</h2>

@@ -1,17 +1,18 @@
 import csv
 import io
 import json
+import secrets
 import uuid
 from collections import Counter
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from django.conf import settings
 from django.contrib import messages
-from django.db import DatabaseError, IntegrityError, connection
-from django.db.models import Q, Sum
+from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db.models import F, Q, Sum
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -24,8 +25,9 @@ from .forms import (
     PaymentSettingForm, ProductForm, ProfileForm,
 )
 from .models import BankAccount, MedicalDocument, Order, OrderItem, Patient, PaymentSetting, Product, Profile
+from .pagination import paginate_items
 from .services import (
-    SupabaseError, sign_in, storage_image_bytes, storage_image_signed_url, storage_signed_url,
+    SupabaseError, get_auth_user, sign_in, storage_image_bytes, storage_image_signed_url, storage_signed_url,
     update_password, upload_file, versioned_media_url,
 )
 
@@ -68,6 +70,7 @@ def _decorate_bank_assets(bank):
 
 
 def _order_context(order):
+    ensure_order_delivery_code(order)
     items = list(OrderItem.objects.filter(order_id=order.id))
     products = {str(p.id): p for p in Product.objects.filter(id__in=[x.product_id for x in items if x.product_id])}
     patient = Patient.objects.filter(
@@ -95,6 +98,23 @@ def _order_context(order):
         "proof_is_pdf": proof_is_pdf,
         "customer_avatar_url": _customer_avatar_url(patient, profile),
     }
+
+
+def generate_delivery_code():
+    """Genera un PIN numérico de entrega evitando códigos ya asignados."""
+    for _ in range(25):
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        if not Order.objects.filter(tracking_number=code).exists():
+            return code
+    return f"{secrets.randbelow(10_000_000):07d}"
+
+
+def ensure_order_delivery_code(order):
+    if not str(order.tracking_number or "").strip():
+        order.tracking_number = generate_delivery_code()
+        order.updated_at = timezone.now()
+        order.save(update_fields=["tracking_number", "updated_at"])
+    return order.tracking_number
 
 
 def _orders_context(request):
@@ -141,11 +161,13 @@ def _orders_context(request):
             "first_item": first_item,
             "product": product,
         })
+    pagination = paginate_items(request, rows)
     return {
-        "rows": rows,
+        "rows": pagination.pop("items"),
         "orders_total": len(orders_list),
         "q": q,
         "current_status": status,
+        **pagination,
     }
 
 
@@ -225,8 +247,9 @@ def _payments_context(request):
     approved_total = sum(
         (order.total or Decimal("0")) for order in orders_list if _payment_state(order) == "approved"
     )
+    pagination = paginate_items(request, rows)
     return {
-        "rows": rows,
+        "rows": pagination.pop("items"),
         "q": q,
         "current_status": status,
         "current_method": method,
@@ -234,6 +257,7 @@ def _payments_context(request):
         "approved_count": sum(_payment_state(order) == "approved" for order in orders_list),
         "rejected_count": sum(_payment_state(order) == "rejected" for order in orders_list),
         "approved_total": approved_total,
+        **pagination,
     }
 
 
@@ -290,6 +314,86 @@ def login_view(request):
         except SupabaseError as exc:
             messages.error(request, str(exc))
     return render(request, "panel/login.html")
+
+
+def oauth_start(request, provider):
+    if provider not in {"google", "facebook"}:
+        return redirect("login")
+    if settings.DEMO_MODE or not settings.SUPABASE_URL:
+        messages.error(request, "Configura Supabase Auth para habilitar el acceso social.")
+        return redirect("login")
+    callback = request.build_absolute_uri(reverse("oauth_callback"))
+    query = urlencode({"provider": provider, "redirect_to": callback})
+    return redirect(f"{settings.SUPABASE_URL}/auth/v1/authorize?{query}")
+
+
+def oauth_callback(request):
+    return render(request, "panel/oauth_callback.html")
+
+
+@require_POST
+def oauth_complete(request):
+    try:
+        payload = json.loads(request.body or "{}")
+        access_token = str(payload.get("access_token") or "")
+        refresh_token = str(payload.get("refresh_token") or "")
+        if not access_token:
+            raise SupabaseError("Supabase no devolvió una sesión válida.")
+        user = get_auth_user(access_token)
+        user_id = uuid.UUID(str(user.get("id")))
+        email = str(user.get("email") or "").strip()
+        metadata = user.get("user_metadata") if isinstance(user.get("user_metadata"), dict) else {}
+        full_name = str(metadata.get("full_name") or metadata.get("name") or email.split("@")[0] or "Usuario").strip()
+        avatar_url = str(metadata.get("avatar_url") or metadata.get("picture") or "").strip()
+        now = timezone.now()
+        with transaction.atomic():
+            profile_obj = Profile.objects.filter(id=user_id).first()
+            is_new = profile_obj is None
+            if is_new:
+                existing_roles = set(Profile.objects.exclude(role__isnull=True).values_list("role", flat=True))
+                default_role = "usuario" if existing_roles & {"usuario", "administrador"} else "user"
+                profile_obj = Profile(
+                    id=user_id, full_name=full_name, role=default_role, is_active=True,
+                    avatar_path=avatar_url or None, preferences={"medical_profile_pending": True},
+                    created_at=now, updated_at=now,
+                )
+                profile_obj.save(force_insert=True)
+            elif not profile_obj.is_active:
+                raise SupabaseError("Esta cuenta está bloqueada.")
+            else:
+                update_fields = []
+                if not profile_obj.full_name and full_name:
+                    profile_obj.full_name = full_name
+                    update_fields.append("full_name")
+                if avatar_url and not profile_obj.avatar_path:
+                    profile_obj.avatar_path = avatar_url
+                    update_fields.append("avatar_path")
+                if update_fields:
+                    profile_obj.updated_at = now
+                    profile_obj.save(update_fields=[*update_fields, "updated_at"])
+
+            role = str(profile_obj.role or "user").lower()
+            if role not in {"admin", "administrador"}:
+                patient = Patient.objects.filter(Q(owner_id=user_id) | Q(id=user_id)).first()
+                if patient is None:
+                    parts = full_name.split(None, 1)
+                    Patient(
+                        id=uuid.uuid4(), owner_id=user_id, first_name=parts[0] or "Usuario",
+                        last_name=parts[1] if len(parts) > 1 else "",
+                        id_number=f"PEND-{uuid.uuid4().hex[:12].upper()}", email=email or None,
+                        qr_token=uuid.uuid4(), status="active", created_at=now, updated_at=now,
+                    ).save(force_insert=True)
+
+        request.session.cycle_key()
+        request.session["supabase_user_id"] = str(user_id)
+        request.session["supabase_email"] = email
+        request.session["supabase_access_token"] = access_token
+        request.session["supabase_refresh_token"] = refresh_token
+        request.session["account_role"] = role
+        destination = reverse("dashboard" if role in {"admin", "administrador"} else "patient_dashboard")
+        return JsonResponse({"ok": True, "redirect": destination, "new_account": is_new})
+    except (SupabaseError, ValueError, TypeError, DatabaseError) as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
 
 
 def logout_view(request):
@@ -465,7 +569,22 @@ def dashboard(request):
 @admin_required
 def global_search(request):
     q = request.GET.get("q", "").strip()
-    results = []
+    modules = [
+        ("Inicio", "Resumen del panel", "dashboard"),
+        ("Pacientes", "Fichas médicas y códigos QR", "patients"),
+        ("Validar pagos", "Comprobantes pendientes", "payments"),
+        ("Productos", "Catálogo de pulseras", "products"),
+        ("Pedidos", "Seguimiento y entregas", "orders"),
+        ("Usuarios", "Accesos y permisos", "users"),
+        ("Perfil", "Datos de la cuenta", "profile"),
+        ("Bancos y cuentas", "Datos para recibir pagos", "banks"),
+        ("Configuración", "Preferencias y notificaciones", "configuration"),
+    ]
+    results = [
+        {"title": title, "subtitle": subtitle, "url": reverse(url_name)}
+        for title, subtitle, url_name in modules
+        if not q or q.casefold() in f"{title} {subtitle}".casefold()
+    ]
     if len(q) >= 2:
         for p in Patient.objects.filter(Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(id_number__icontains=q))[:6]:
             results.append({"title": p.full_name, "subtitle": f"Paciente · {p.id_number}", "url": f"/pacientes/{p.id}/"})
@@ -485,7 +604,8 @@ def patients(request):
         qs = qs.filter(Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(id_number__icontains=q) | Q(email__icontains=q) | Q(city__icontains=q))
     if status in {"active", "inactive"}:
         qs = qs.filter(status=status)
-    patient_rows = list(qs)
+    pagination = paginate_items(request, qs)
+    patient_rows = pagination.pop("items")
     profiles = _profile_map({patient.owner_id for patient in patient_rows if patient.owner_id})
     for patient in patient_rows:
         profile = profiles.get(str(patient.owner_id))
@@ -498,6 +618,7 @@ def patients(request):
         "q": q,
         "current_status": status,
         "total_patients": Patient.objects.count(),
+        **pagination,
     })
 
 
@@ -583,6 +704,15 @@ def patient_delete(request, patient_id):
 
 def public_patient(request, token):
     patient = get_object_or_404(Patient, qr_token=token)
+    profile_obj = Profile.objects.filter(id=patient.owner_id).first()
+    preferences = profile_obj.preferences if profile_obj and isinstance(profile_obj.preferences, dict) else {}
+    if preferences.get("public_profile", True) is False:
+        return HttpResponse("Esta ficha de emergencia está configurada como privada.", status=403)
+    if preferences.get("analytics", True):
+        Patient.objects.filter(id=patient.id).update(
+            qr_scan_count=F("qr_scan_count") + 1,
+            last_qr_scan_at=timezone.now(),
+        )
     return render(request, "panel/public_patient.html", {"patient": patient})
 
 
@@ -694,12 +824,15 @@ def products(request):
     qs = Product.objects.all()
     if len(q) >= 2:
         qs = qs.filter(name__icontains=q)
+    products_count = qs.count()
+    pagination = paginate_items(request, qs)
     return render(request, "panel/products.html", {
-        "products": qs,
-        "products_count": qs.count(),
+        "products": pagination.pop("items"),
+        "products_count": products_count,
         "form": form,
         "editing": editing,
         "q": q,
+        **pagination,
     })
 
 
@@ -744,9 +877,17 @@ def order_detail(request, order_id):
 @require_POST
 def order_update(request, order_id):
     order = get_object_or_404(Order, id=order_id)
+    original_delivery_code = ensure_order_delivery_code(order)
+    previous_status = str(order.status or "").lower()
     form = OrderUpdateForm(request.POST, instance=order)
     if form.is_valid():
+        requested_status = str(form.cleaned_data.get("status") or "").lower()
+        supplied_code = request.POST.get("delivery_code", "").strip()
+        if requested_status == "delivered" and previous_status != "delivered" and supplied_code != original_delivery_code:
+            messages.error(request, "El código de entrega no coincide. Solicítalo al usuario antes de marcar el pedido como entregado.")
+            return redirect("order_detail", order_id=order.id)
         item = form.save(commit=False)
+        item.tracking_number = original_delivery_code
         item.updated_at = timezone.now()
         item.save()
         messages.success(request, "Pedido actualizado correctamente.")
@@ -773,13 +914,15 @@ def users(request):
     if len(q) >= 2:
         qs = qs.filter(Q(full_name__icontains=q) | Q(phone__icontains=q))
     roles = [str(role or "").lower() for role in all_profiles.values_list("role", flat=True)]
+    pagination = paginate_items(request, qs)
     return render(request, "panel/users.html", {
-        "profiles": qs,
+        "profiles": pagination.pop("items"),
         "q": q,
         "users_total": all_profiles.count(),
         "admins_total": sum(role in {"admin", "administrador"} for role in roles),
         "active_total": all_profiles.filter(is_active=True).count(),
         "blocked_total": all_profiles.filter(is_active=False).count(),
+        **pagination,
     })
 
 
@@ -1017,7 +1160,7 @@ def configuration(request):
         section = request.POST.get("section")
         if section == "preferences":
             boolean_keys = ["order_updates", "qr_activity", "email_news", "system_alerts", "public_profile", "analytics"]
-            preferences = {"language": request.POST.get("language", "es"), "theme": request.POST.get("theme", "light")}
+            preferences = {**preferences, "language": request.POST.get("language", "es"), "theme": request.POST.get("theme", "light")}
             preferences.update({key: request.POST.get(key) == "on" for key in boolean_keys})
             request.admin_profile.preferences = preferences
             request.admin_profile.updated_at = timezone.now()

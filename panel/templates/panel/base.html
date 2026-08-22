@@ -38,7 +38,7 @@
       <div class="search-results" id="searchResults"></div>
     </div>
     <div class="top-actions">
-      <button class="icon-button notification-button" aria-label="Notificaciones"><i data-lucide="bell"></i><span></span></button>
+      <button class="icon-button notification-button" id="notificationButton" aria-label="Notificaciones" aria-expanded="false"><i data-lucide="bell"></i>{% if notification_count %}<span>{{ notification_count }}</span>{% endif %}</button>
       <button class="profile-trigger" id="profileTrigger">
         {% if admin_avatar_url %}<img src="{{ admin_avatar_url }}" alt="Foto de perfil" data-avatar-fallback><span class="avatar-placeholder" hidden><i data-lucide="user-round"></i></span>{% else %}<span class="avatar-placeholder"><i data-lucide="user-round"></i></span>{% endif %}
         <i data-lucide="chevron-down"></i>
@@ -49,6 +49,10 @@
         <hr>
         <a href="{% url 'profile' %}"><i data-lucide="user-round"></i> Mi perfil</a>
         <a class="danger-text" href="{% url 'logout' %}"><i data-lucide="log-out"></i> Cerrar sesión</a>
+      </div>
+      <div class="notification-menu" id="notificationMenu">
+        <header><strong>Notificaciones</strong><small>{{ notification_count }} pendiente{{ notification_count|pluralize }}</small></header>
+        <div>{% for item in notifications %}<a href="{{ item.url }}"><span><i data-lucide="{{ item.icon }}"></i></span><span><strong>{{ item.title }}</strong><small>{{ item.text }}</small></span><i data-lucide="chevron-right"></i></a>{% empty %}<p class="notification-empty"><i data-lucide="bell-off"></i>No tienes novedades.</p>{% endfor %}</div>
       </div>
     </div>
   </header>

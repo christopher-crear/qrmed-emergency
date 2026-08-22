@@ -1,8 +1,11 @@
 {% load panel_extras %}
 <section class="orders-board-v3{% if patient_mode %} orders-board-v3--patient{% endif %}">
   <header class="orders-board-v3__heading">
-    <h1>{% if patient_mode %}Mis pedidos{% else %}Pedidos{% endif %}</h1>
-    <p>{{ orders_total }} pedido{{ orders_total|pluralize:"s" }} realizado{{ orders_total|pluralize:"s" }}</p>
+    <div><h1>{% if patient_mode %}Mis pedidos{% else %}Pedidos{% endif %}</h1><p>{{ orders_total }} pedido{{ orders_total|pluralize:"s" }} realizado{{ orders_total|pluralize:"s" }}</p></div>
+    <form class="orders-list-search" method="get" data-auto-search>
+      <i data-lucide="search"></i><input name="q" value="{{ q }}" autocomplete="off" placeholder="Buscar pedidos..." aria-label="Buscar pedidos">
+      {% if not patient_mode %}<input type="hidden" name="status" value="{{ current_status|default:'all' }}">{% endif %}
+    </form>
   </header>
 
   <div class="orders-board-v3__list">
@@ -47,4 +50,5 @@
       </article>
     {% endfor %}
   </div>
+  {% include 'panel/partials/pagination.html' %}
 </section>

@@ -82,6 +82,23 @@ def sign_in(email, password):
     return response.json()
 
 
+def get_auth_user(access_token):
+    """Obtiene del servidor de Supabase la identidad asociada al token OAuth."""
+    if settings.DEMO_MODE:
+        raise SupabaseError("El acceso social no está disponible en modo demostración.")
+    try:
+        response = requests.get(
+            f"{settings.SUPABASE_URL}/auth/v1/user",
+            headers=_auth_headers(access_token),
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise SupabaseError("No se pudo validar el acceso social con Supabase.") from exc
+    if not response.ok:
+        raise SupabaseError("La sesión social no es válida o expiró.")
+    return response.json()
+
+
 def update_password(access_token, new_password):
     if settings.DEMO_MODE:
         return True

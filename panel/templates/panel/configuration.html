@@ -15,7 +15,6 @@
         <a href="#notifications"><i data-lucide="bell"></i><span>Notificaciones</span></a>
         <a href="#privacy"><i data-lucide="lock-keyhole"></i><span>Privacidad</span></a>
         <a href="#payments-settings"><i data-lucide="landmark"></i><span>Bancos y cuentas</span></a>
-        <a href="#storage-status"><i data-lucide="cloud"></i><span>Almacenamiento</span></a>
       </nav>
       <div class="configuration-nav-note"><i data-lucide="info"></i><p>Los cambios se almacenan directamente en Supabase.</p></div>
     </aside>
@@ -55,12 +54,7 @@
         <footer><span><i data-lucide="lock-keyhole"></i>Los datos bancarios se muestran únicamente a usuarios autenticados durante el pago.</span></footer>
       </article>
 
-      <article class="configuration-card storage-configuration-card" id="storage-status">
-        <header><span class="configuration-icon cyan"><i data-lucide="cloud"></i></span><div><span class="section-eyebrow">SUPABASE</span><h2>Almacenamiento privado</h2><p>Buckets utilizados por el panel para archivos protegidos.</p></div></header>
-        <div class="storage-bucket-grid"><div><i data-lucide="user-round"></i><span><strong>{{ profile_bucket }}</strong><small>Avatares y portadas</small></span><em>Privado</em></div><div><i data-lucide="image"></i><span><strong>{{ patient_bucket }}</strong><small>Fotografías de pacientes</small></span><em>Privado</em></div><div><i data-lucide="receipt-text"></i><span><strong>{{ payment_bucket }}</strong><small>Comprobantes</small></span><em>Privado</em></div><div><i data-lucide="landmark"></i><span><strong>{{ bank_bucket }}</strong><small>Logos y códigos QR bancarios</small></span><em>Privado</em></div></div>
-      </article>
-
-      <article class="configuration-danger"><span><i data-lucide="triangle-alert"></i></span><div><h2>Zona de seguridad</h2><p>La eliminación de una cuenta requiere confirmación directa en Supabase Auth.</p></div><a class="btn btn-outline" href="{% url 'payments_export' %}"><i data-lucide="download"></i>Exportar pagos</a><button type="button" disabled><i data-lucide="trash-2"></i>Eliminar cuenta</button></article>
+      <article class="configuration-danger"><span><i data-lucide="triangle-alert"></i></span><div><h2>Zona de seguridad</h2><p>La eliminación de una cuenta requiere confirmación directa en Supabase Auth.</p></div><button type="button" disabled><i data-lucide="trash-2"></i>Eliminar cuenta</button></article>
     </main>
   </div>
 </section>

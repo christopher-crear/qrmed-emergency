@@ -12,18 +12,27 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('qrmed-sidebar', document.body.classList.contains('sidebar-expanded') ? 'expanded' : 'compact');
   });
   const trigger = document.getElementById('profileTrigger'), menu = document.getElementById('profileMenu');
-  trigger?.addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('show'); });
-  document.addEventListener('click', () => menu?.classList.remove('show'));
+  const notificationButton = document.getElementById('notificationButton'), notificationMenu = document.getElementById('notificationMenu');
+  trigger?.addEventListener('click', e => { e.stopPropagation(); notificationMenu?.classList.remove('show'); menu.classList.toggle('show'); });
+  notificationButton?.addEventListener('click', e => { e.stopPropagation(); menu?.classList.remove('show'); notificationMenu?.classList.toggle('show'); notificationButton.setAttribute('aria-expanded', notificationMenu?.classList.contains('show') ? 'true' : 'false'); });
+  notificationMenu?.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => { menu?.classList.remove('show'); notificationMenu?.classList.remove('show'); notificationButton?.setAttribute('aria-expanded', 'false'); });
 
   const search = document.getElementById('globalSearch'), results = document.getElementById('searchResults');
   let timer;
-  search?.addEventListener('input', () => {
-    clearTimeout(timer); const q=search.value.trim();
-    if(q.length<2){ results.innerHTML=''; results.classList.remove('show'); return; }
-    timer=setTimeout(async()=>{try{const endpoint=document.body.dataset.searchUrl||'/buscar/';const r=await fetch(`${endpoint}?q=${encodeURIComponent(q)}`),d=await r.json();
-      results.innerHTML=d.results.length?d.results.map(x=>`<a href="${x.url}"><strong>${escapeHtml(x.title)}</strong><small>${escapeHtml(x.subtitle)}</small></a>`).join(''):'<div class="no-search">Sin resultados</div>';results.classList.add('show');
-    }catch(e){results.classList.remove('show')}},250);
-  });
+  const runGlobalSearch = async () => {
+    const q=search?.value.trim()||'';
+    if(q.length===1){ results.innerHTML=''; results.classList.remove('show'); return; }
+    try{const endpoint=document.body.dataset.searchUrl||'/buscar/';const r=await fetch(`${endpoint}?q=${encodeURIComponent(q)}`),d=await r.json();
+      results.innerHTML=d.results.length?d.results.map(x=>`<a href="${escapeHtml(x.url)}"><strong>${escapeHtml(x.title)}</strong><small>${escapeHtml(x.subtitle)}</small></a>`).join(''):'<div class="no-search">Sin resultados</div>';results.classList.add('show');
+    }catch(e){results.classList.remove('show')}
+  };
+  search?.addEventListener('focus', runGlobalSearch);
+  search?.addEventListener('input', () => { clearTimeout(timer); timer=setTimeout(runGlobalSearch,200); });
+  results?.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', e => { if(!e.target.closest('.global-search')) results?.classList.remove('show'); });
+
+  document.querySelector('[data-close-onboarding]')?.addEventListener('click', () => document.getElementById('medicalOnboarding')?.remove());
 
   document.querySelectorAll('[data-confirm]').forEach(button => button.addEventListener('click', event => {
     event.preventDefault(); const form=button.closest('form'), dialog=document.getElementById('confirmDialog');

@@ -2,7 +2,7 @@
 {% block title %}{{ order.order_number }}{% endblock %}
 {% block content %}
   <div class="orders-modal-underlay">
-    {% include 'panel/partials/orders_content.html' with rows=list_rows orders_total=list_orders_total q=list_q current_status=list_current_status %}
+    {% include 'panel/partials/orders_content.html' with rows=list_rows orders_total=list_orders_total q=list_q current_status=list_current_status page_obj=list_page_obj per_page=list_per_page page_size_choices=list_page_size_choices pagination_query=list_pagination_query filtered_count=list_filtered_count %}
   </div>
   {% include 'panel/partials/order_modal.html' %}
 {% endblock %}

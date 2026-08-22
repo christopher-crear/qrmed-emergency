@@ -23,6 +23,7 @@
       <td><div class="patient-actions"><a title="Ver paciente" href="{% url 'patient_detail' patient.id %}"><i data-lucide="eye"></i></a><a title="Editar paciente" href="{% url 'patient_edit' patient.id 1 %}"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'patient_delete' patient.id %}">{% csrf_token %}<button type="button" class="delete" data-confirm="Se eliminará la ficha médica de {{ patient.full_name }}." data-confirm-title="¿Eliminar paciente?"><i data-lucide="trash-2"></i></button></form></div></td>
     </tr>{% empty %}<tr><td colspan="7"><div class="empty-mini">No se encontraron pacientes con estos filtros.</div></td></tr>{% endfor %}</tbody>
   </table></div></article>
+  {% include 'panel/partials/pagination.html' %}
 </section>
 {% include 'panel/partials/qr_modal.html' %}
 {% endblock %}

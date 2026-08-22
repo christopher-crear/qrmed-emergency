@@ -4,9 +4,6 @@
 <section class="products-page">
   <header class="products-heading">
     <div><h1>Productos</h1><p>Crea, edita, activa o elimina productos reales</p></div>
-    <form class="products-search" method="get" data-auto-search>
-      <i data-lucide="search"></i><input name="q" value="{{ q }}" autocomplete="off" placeholder="Buscar productos..." aria-label="Buscar productos">
-    </form>
   </header>
 
   <form method="post" class="card products-form-card" id="productForm">{% csrf_token %}
@@ -32,7 +29,12 @@
     </div>
   </form>
 
-  <div class="products-list-heading"><div><h2>Catálogo de productos</h2><p>{{ products_count }} producto{{ products_count|pluralize }} encontrado{{ products_count|pluralize }}</p></div></div>
+  <div class="products-list-heading">
+    <div><h2>Catálogo de productos</h2><p>{{ products_count }} producto{{ products_count|pluralize }} encontrado{{ products_count|pluralize }}</p></div>
+    <form class="products-search" method="get" data-auto-search>
+      <i data-lucide="search"></i><input name="q" value="{{ q }}" autocomplete="off" placeholder="Buscar productos..." aria-label="Buscar productos">
+    </form>
+  </div>
   <section class="products-grid">
     {% for product in products %}
     <article class="card product-catalog-card">
@@ -54,5 +56,6 @@
     <article class="card products-empty"><i data-lucide="package-search"></i><h3>No encontramos productos</h3><p>{% if q %}Prueba con otro término de búsqueda.{% else %}Crea el primer producto usando el formulario superior.{% endif %}</p></article>
     {% endfor %}
   </section>
+  {% include 'panel/partials/pagination.html' %}
 </section>
 {% endblock %}
