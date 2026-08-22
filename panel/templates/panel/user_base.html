@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260822-invoices-v1">
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260822-accounts-v2">
 </head>
 <body class="patient-app" data-search-url="{% url 'patient_global_search' %}">
   <aside class="sidebar patient-sidebar" id="sidebar">
@@ -48,6 +48,7 @@
     {% if messages %}<div class="toast-stack">{% for message in messages %}<div class="toast {{ message.tags }}">{{ message }}<button onclick="this.parentElement.remove()">×</button></div>{% endfor %}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
+  {% include 'panel/partials/invoice_preview_modal.html' %}
   {% if needs_medical_profile %}<div class="medical-onboarding" id="medicalOnboarding"><button type="button" data-close-onboarding aria-label="Cerrar"><i data-lucide="x"></i></button><span><i data-lucide="heart-pulse"></i></span><h2>Completa tu ficha médica</h2><p>Para que tu pulsera sea útil en una emergencia, agrega tus datos médicos y contactos.</p><a class="btn btn-primary" href="{% url 'patient_medical_record' 1 %}">Llenar ficha médica</a></div>{% endif %}
-  <script defer src="{% static 'panel/vendor/lucide.min.js' %}"></script><script defer src="{% static 'panel/js/app.js' %}?v=20260822-invoices-v1"></script>{% block scripts %}{% endblock %}
+  <script defer src="{% static 'panel/vendor/lucide.min.js' %}"></script><script defer src="{% static 'panel/js/app.js' %}?v=20260822-accounts-v2"></script>{% block scripts %}{% endblock %}
 </body></html>

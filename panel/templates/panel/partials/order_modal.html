@@ -1,7 +1,7 @@
 {% load panel_extras %}
 <div class="order-modal-v3" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
   {% if patient_mode %}
-    <a class="order-modal-v3__backdrop" href="{% url 'patient_orders' %}?q={{ list_q|urlencode }}" aria-label="Cerrar detalle"></a>
+    <a class="order-modal-v3__backdrop" href="{% if from_delivered %}{% url 'patient_delivered_history' %}{% else %}{% url 'patient_orders' %}{% endif %}?q={{ list_q|urlencode }}" aria-label="Cerrar detalle"></a>
   {% else %}
     <a class="order-modal-v3__backdrop" href="{% url 'orders' %}?q={{ list_q|urlencode }}&status={{ list_current_status|default:'all' }}" aria-label="Cerrar detalle"></a>
   {% endif %}
@@ -10,7 +10,7 @@
     <header class="order-modal-v3__header">
       <h1 id="orderModalTitle">{{ order.order_number }}</h1>
       {% if patient_mode %}
-        <a href="{% url 'patient_orders' %}?q={{ list_q|urlencode }}" aria-label="Cerrar"><i data-lucide="x"></i></a>
+        <a href="{% if from_delivered %}{% url 'patient_delivered_history' %}{% else %}{% url 'patient_orders' %}{% endif %}?q={{ list_q|urlencode }}" aria-label="Cerrar"><i data-lucide="x"></i></a>
       {% else %}
         <a href="{% url 'orders' %}?q={{ list_q|urlencode }}&status={{ list_current_status|default:'all' }}" aria-label="Cerrar"><i data-lucide="x"></i></a>
       {% endif %}
@@ -32,7 +32,7 @@
       </div>
 
       {% if patient_mode %}
-        {% if invoice and invoice.sent_at %}<section class="order-modal-v3__proof"><h2>Factura del pedido</h2><div class="invoice-inline-actions"><a class="btn btn-muted" href="{% url 'invoice_pdf' invoice.id %}?preview=1" target="_blank"><i data-lucide="eye"></i> Previsualizar</a><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar factura</a></div></section>{% endif %}
+        {% if invoice and invoice.sent_at %}<section class="order-modal-v3__proof"><h2>Factura del pedido</h2><div class="invoice-inline-actions"><button type="button" class="btn btn-muted" data-invoice-preview="{% url 'invoice_pdf' invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar</button><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar factura</a></div></section>{% endif %}
         {% if proof_url %}
           <section class="order-modal-v3__proof">
             <h2>Comprobante de pago</h2>
@@ -40,7 +40,8 @@
           </section>
         {% endif %}
       {% else %}
-        {% if invoice %}<section class="order-modal-v3__proof"><h2>Factura {{ invoice.invoice_number }}</h2><div class="invoice-inline-actions"><a class="btn btn-muted" href="{% url 'invoice_pdf' invoice.id %}?preview=1" target="_blank"><i data-lucide="eye"></i> Ver factura</a><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar</a></div></section>{% endif %}
+        {% if invoice %}<section class="order-modal-v3__proof"><h2>Factura {{ invoice.invoice_number }}</h2><div class="invoice-inline-actions"><button type="button" class="btn btn-muted" data-invoice-preview="{% url 'invoice_pdf' invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar factura</button><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar</a></div></section>{% endif %}
+        {% if order.status != 'delivered' %}
         <form class="order-modal-v3__update" method="post" action="{% url 'order_update' order.id %}">
           {% csrf_token %}
           <h2>Actualizar pedido</h2>
@@ -48,7 +49,6 @@
             <div><label for="{{ form.status.id_for_label }}">Estado</label>{{ form.status }}</div>
             <div><label for="{{ form.estimated_delivery.id_for_label }}">Entrega estimada</label>{{ form.estimated_delivery }}</div>
             <div><label for="{{ form.tracking_number.id_for_label }}">Código generado</label>{{ form.tracking_number }}</div>
-            <div><label for="deliveryCode">Confirmar código para entregar</label><input id="deliveryCode" name="delivery_code" inputmode="numeric" maxlength="7" autocomplete="one-time-code" placeholder="Código del usuario"></div>
           </div>
           <div class="order-modal-v3__actions">
             <button type="button" class="btn btn-danger" id="deleteOrderButton"><i data-lucide="trash-2"></i> Eliminar pedido</button>
@@ -56,6 +56,7 @@
           </div>
         </form>
         <form id="deleteOrderForm" method="post" action="{% url 'order_delete' order.id %}">{% csrf_token %}</form>
+        {% else %}<section class="delivered-closed-note"><i data-lucide="lock-keyhole"></i><div><strong>Pedido cerrado</strong><p>Este pedido ya fue entregado y solo se conserva como historial.</p></div></section>{% endif %}
       {% endif %}
     </div>
   </article>

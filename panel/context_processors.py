@@ -6,7 +6,7 @@ from django.db import DatabaseError
 from django.db.models import Q
 from django.urls import reverse
 
-from .models import DiscountTicket, Invoice, NotificationRead, Order, Patient, Profile
+from .models import ActivationRequest, DiscountTicket, Invoice, NotificationRead, Order, Patient, Profile
 from .services import versioned_media_url
 
 
@@ -18,6 +18,19 @@ def _read_link(item):
 def _notification_candidates(profile, patient, is_admin, preferences, needs_medical_profile):
     notifications = []
     if is_admin:
+        try:
+            activation_requests = ActivationRequest.objects.only(
+                "id", "user_id", "email", "created_at"
+            ).filter(status="pending").order_by("-created_at")[:5]
+            for activation in activation_requests:
+                notifications.append({
+                    "key": f"admin-activation:{activation.id}",
+                    "title": "Solicitud de reactivación",
+                    "text": activation.email or "Cuenta bloqueada",
+                    "target": reverse("admin_mailbox"), "icon": "user-check",
+                })
+        except DatabaseError:
+            pass
         if preferences.get("system_alerts", True):
             pending_payments = Order.objects.only("id", "order_number", "created_at").exclude(
                 payment_proof_path__isnull=True

@@ -19,10 +19,13 @@ from django.views.decorators.http import require_POST
 from .decorators import patient_required
 from .forms import PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm, ProfileForm
 from .credential_pdf import build_credential_pdf
-from .models import BankAccount, DiscountCampaign, DiscountTicket, Invoice, Order, OrderItem, PaymentSetting, Product
+from .models import (
+    ActivationRequest, BankAccount, DiscountCampaign, DiscountTicket, Invoice,
+    MedicalDocument, NotificationRead, Order, OrderItem, Patient, PaymentSetting, Product, Profile,
+)
 from .pagination import paginate_items
 from .services import (
-    SupabaseError, sign_in, storage_image_bytes, storage_signed_url, update_password, upload_file,
+    SupabaseError, delete_auth_user, delete_storage_files, sign_in, storage_image_bytes, storage_signed_url, update_password, upload_file,
     versioned_media_url,
 )
 
@@ -48,7 +51,7 @@ def _ensure_delivery_code(order):
         order.save(update_fields=["tracking_number", "updated_at"])
 
 
-def _order_rows(orders):
+def _order_rows(orders, include_invoices=False):
     order_list = list(orders)
     items = list(OrderItem.objects.filter(order_id__in=[item.id for item in order_list]))
     product_map = {
@@ -58,6 +61,15 @@ def _order_rows(orders):
     grouped = {}
     for item in items:
         grouped.setdefault(str(item.order_id), []).append(item)
+    invoice_map = {}
+    if include_invoices:
+        try:
+            invoice_map = {
+                str(invoice.order_id): invoice
+                for invoice in Invoice.objects.filter(order_id__in=[order.id for order in order_list])
+            }
+        except DatabaseError:
+            invoice_map = {}
     rows = []
     for order in order_list:
         order_items = grouped.get(str(order.id), [])
@@ -67,6 +79,7 @@ def _order_rows(orders):
             "items": order_items,
             "first_item": first_item,
             "product": product_map.get(str(first_item.product_id)) if first_item and first_item.product_id else None,
+            "invoice": invoice_map.get(str(order.id)),
         })
     return rows
 
@@ -690,7 +703,7 @@ def medical_record(request, step):
 @patient_required
 def orders(request):
     query = request.GET.get("q", "").strip()
-    base_queryset = _patient_orders(request)
+    base_queryset = _patient_orders(request).exclude(status="delivered")
     orders_total = base_queryset.count()
     queryset = base_queryset
     if len(query) >= 2:
@@ -718,13 +731,15 @@ def order_detail(request, order_id):
         access_token=request.session.get("supabase_access_token", ""),
     )
     query = request.GET.get("q", "").strip()
-    list_queryset = _patient_orders(request)
+    from_delivered = request.GET.get("from") == "delivered" or str(order.status or "").lower() == "delivered"
+    list_queryset = _patient_orders(request).filter(status="delivered") if from_delivered else _patient_orders(request).exclude(status="delivered")
     row["list_orders_total"] = list_queryset.count()
     if len(query) >= 2:
         list_queryset = list_queryset.filter(order_number__icontains=query)
     pagination = paginate_items(request, list_queryset)
     row["list_rows"] = _order_rows(pagination.pop("items"))
     row["list_q"] = query
+    row["from_delivered"] = from_delivered
     row.update({f"list_{key}": value for key, value in pagination.items()})
     return render(request, "panel/patient_order_detail.html", row)
 
@@ -763,7 +778,7 @@ def delivered_history(request):
         queryset = queryset.filter(order_number__icontains=query)
     pagination = paginate_items(request, queryset)
     return render(request, "panel/patient_delivered_history.html", {
-        "rows": _order_rows(pagination.pop("items")),
+        "rows": _order_rows(pagination.pop("items"), include_invoices=True),
         "orders_total": total, "q": query, **pagination,
     })
 
@@ -809,7 +824,8 @@ def profile(request):
         "profile_metric_qr": 1,
         "profile_metric_orders": order_count,
         "profile_member_since": profile_obj.created_at,
-        "profile_danger_text": "La eliminación de cuentas requiere validación del administrador para proteger tu historial médico.",
+        "profile_danger_text": "Puedes eliminar permanentemente tu cuenta y sus datos confirmando tu contraseña actual.",
+        "profile_delete_action": reverse("patient_account_delete"),
     })
 
 
@@ -865,6 +881,53 @@ def password_update(request):
         except SupabaseError as exc:
             messages.error(request, str(exc))
     return redirect("patient_profile")
+
+
+@patient_required
+@require_POST
+def account_delete(request):
+    password = request.POST.get("current_password", "")
+    if not password:
+        messages.error(request, "Escribe tu contraseña actual para confirmar.")
+        return redirect("patient_profile")
+    try:
+        auth = sign_in(request.session.get("supabase_email", ""), password)
+        auth_user_id = str((auth.get("user") or {}).get("id") or "")
+        if auth_user_id != str(request.user_profile.id):
+            raise SupabaseError("La contraseña no corresponde a esta cuenta.")
+        profile_id = request.user_profile.id
+        patient_ids = list(Patient.objects.filter(
+            Q(owner_id=profile_id) | Q(id=profile_id)
+        ).values_list("id", flat=True))
+        order_ids = list(Order.objects.filter(
+            user_id__in={profile_id, *patient_ids}
+        ).values_list("id", flat=True))
+        profile_paths = [request.user_profile.avatar_path, request.user_profile.cover_path]
+        patient_paths = list(Patient.objects.filter(id__in=patient_ids).values_list("photo_path", flat=True))
+        document_paths = list(MedicalDocument.objects.filter(
+            Q(owner_id=profile_id) | Q(patient_id__in=patient_ids)
+        ).values_list("storage_path", flat=True))
+        proof_paths = list(Order.objects.filter(id__in=order_ids).values_list("payment_proof_path", flat=True))
+        with transaction.atomic():
+            delete_storage_files(settings.SUPABASE_PROFILE_BUCKET, profile_paths)
+            delete_storage_files(settings.SUPABASE_PATIENT_BUCKET, [*patient_paths, *document_paths])
+            delete_storage_files(settings.SUPABASE_PAYMENT_BUCKET, proof_paths)
+            OrderItem.objects.filter(order_id__in=order_ids).delete()
+            Invoice.objects.filter(Q(user_id=profile_id) | Q(order_id__in=order_ids)).delete()
+            DiscountTicket.objects.filter(Q(user_id=profile_id) | Q(order_id__in=order_ids)).delete()
+            NotificationRead.objects.filter(user_id=profile_id).delete()
+            ActivationRequest.objects.filter(user_id=profile_id).delete()
+            MedicalDocument.objects.filter(Q(owner_id=profile_id) | Q(patient_id__in=patient_ids)).delete()
+            Order.objects.filter(id__in=order_ids).delete()
+            Patient.objects.filter(id__in=patient_ids).delete()
+            Profile.objects.filter(id=profile_id).delete()
+            delete_auth_user(profile_id)
+    except (SupabaseError, DatabaseError) as exc:
+        messages.error(request, str(exc) or "No se pudo eliminar la cuenta.")
+        return redirect("patient_profile")
+    request.session.flush()
+    messages.success(request, "Tu cuenta y tus datos fueron eliminados permanentemente.")
+    return redirect("login")
 
 
 @patient_required

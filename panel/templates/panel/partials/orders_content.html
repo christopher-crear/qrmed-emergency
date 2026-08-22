@@ -12,7 +12,7 @@
   <div class="orders-board-v3__list">
     {% for row in rows %}{% with step=row.order.status|status_step %}
       {% if patient_mode %}
-        <a class="order-card-v3" href="{% url 'patient_order_detail' row.order.id %}?q={{ q|urlencode }}">
+        <a class="order-card-v3" href="{% url 'patient_order_detail' row.order.id %}?q={{ q|urlencode }}{% if row.order.status == 'delivered' %}&from=delivered{% endif %}">
       {% else %}
         <a class="order-card-v3" href="{% url 'order_detail' row.order.id %}?q={{ q|urlencode }}&status={{ current_status|default:'all' }}">
       {% endif %}
@@ -42,6 +42,7 @@
             </div>
           {% endfor %}
         </div>
+        {% if row.order.status == 'delivered' and row.invoice %}<span class="order-invoice-preview" role="button" tabindex="0" data-invoice-preview="{% url 'invoice_pdf' row.invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar factura</span>{% endif %}
       </a>
     {% endwith %}{% empty %}
       <article class="orders-board-v3__empty">

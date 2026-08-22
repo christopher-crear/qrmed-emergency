@@ -46,6 +46,8 @@ urlpatterns = [
     path("usuarios/", views.users, name="users"),
     path("usuarios/<uuid:user_id>/rol/", views.user_role, name="user_role"),
     path("usuarios/<uuid:user_id>/estado/", views.user_status, name="user_status"),
+    path("buzon/", views.admin_mailbox, name="admin_mailbox"),
+    path("buzon/reactivacion/<uuid:request_id>/<str:action>/", views.activation_review, name="activation_review"),
     path("perfil/", views.profile, name="profile"),
     path("perfil/editar/", views.profile_edit, name="profile_edit"),
     path("perfil/contrasena/", views.password_update, name="password_update"),
@@ -76,5 +78,6 @@ urlpatterns = [
     path("mi/perfil/", patient_views.profile, name="patient_profile"),
     path("mi/perfil/editar/", patient_views.profile_edit, name="patient_profile_edit"),
     path("mi/perfil/contrasena/", patient_views.password_update, name="patient_password_update"),
+    path("mi/cuenta/eliminar/", patient_views.account_delete, name="patient_account_delete"),
     path("mi/configuracion/", patient_views.configuration, name="patient_configuration"),
 ]

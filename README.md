@@ -190,13 +190,13 @@ render.yaml             Infraestructura de Render
 build.sh                Instalación, estáticos y migraciones
 ```
 
-## 5. Activar descuentos, notificaciones y facturas en Supabase
+## 5. Activar descuentos, notificaciones, facturas y reactivaciones en Supabase
 
-Abre **Supabase → SQL Editor**, copia todo el contenido de `supabase_actualizacion_completa.sql` y ejecútalo. El script es idempotente y crea las tablas `discount_campaigns`, `discount_tickets`, `notification_reads` e `invoices`, junto con sus índices, restricciones y políticas RLS.
+Abre **Supabase → SQL Editor**, copia todo el contenido de `supabase_actualizacion_completa.sql` y ejecútalo. El script es idempotente y crea las tablas `discount_campaigns`, `discount_tickets`, `notification_reads`, `invoices` y `activation_requests`, junto con sus índices, restricciones y políticas RLS.
 
 Este script no crea una clave foránea hacia `public.orders`, por lo que también funciona en proyectos donde la tabla de pedidos usa otro nombre. Esto corrige el error `relation "public.orders" does not exist`.
 
-La aplicación administra campañas desde `/descuentos/`; los pacientes reclaman tickets en `/mi/descuentos/`. Las facturas aprobadas se envían al buzón del cliente desde la validación de pagos. Nunca expongas `SUPABASE_SERVICE_ROLE_KEY` en el navegador: debe existir únicamente como variable secreta de Render.
+La aplicación administra campañas desde `/descuentos/`; los pacientes reclaman tickets en `/mi/descuentos/`. Las facturas aprobadas se envían al buzón del cliente desde la validación de pagos. Las solicitudes de reactivación llegan a `/buzon/` y la eliminación confirmada por contraseña borra la identidad mediante Supabase Auth Admin. Nunca expongas `SUPABASE_SERVICE_ROLE_KEY` en el navegador: debe existir únicamente como variable secreta de Render.
 
 ## Referencias oficiales
 
