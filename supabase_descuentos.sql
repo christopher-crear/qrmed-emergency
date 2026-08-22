@@ -36,7 +36,9 @@ create table if not exists public.discount_tickets (
   user_id uuid not null references auth.users(id) on delete cascade,
   claimed_at timestamptz not null default now(),
   used_at timestamptz,
-  order_id uuid references public.orders(id) on delete set null,
+  -- Se conserva como UUID sin FK para ser compatible si tu tabla de pedidos
+  -- usa otro nombre. Django valida la relación al utilizar el ticket.
+  order_id uuid,
   unique (campaign_id, user_id)
 );
 

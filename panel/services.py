@@ -82,6 +82,42 @@ def sign_in(email, password):
     return response.json()
 
 
+def sign_up(email, password, first_name, last_name, phone):
+    """Crea una cuenta de paciente mediante Supabase Auth sin guardar la clave."""
+    if settings.DEMO_MODE:
+        user_id = str(uuid.uuid4())
+        return {
+            "user": {"id": user_id, "email": email},
+            "access_token": "",
+            "refresh_token": "",
+        }
+    payload = {
+        "email": email,
+        "password": password,
+        "data": {
+            "full_name": f"{first_name} {last_name}".strip(),
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone": phone,
+        },
+    }
+    try:
+        response = requests.post(
+            f"{settings.SUPABASE_URL}/auth/v1/signup",
+            headers=_auth_headers(), json=payload, timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise SupabaseError("No se pudo conectar con Supabase para crear la cuenta.") from exc
+    if not response.ok:
+        try:
+            body = response.json()
+            detail = body.get("msg") or body.get("message") or body.get("error_description")
+        except ValueError:
+            detail = None
+        raise SupabaseError(detail or "No se pudo crear la cuenta. Verifica el correo ingresado.")
+    return response.json()
+
+
 def get_auth_user(access_token):
     """Obtiene del servidor de Supabase la identidad asociada al token OAuth."""
     if settings.DEMO_MODE:

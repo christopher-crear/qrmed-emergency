@@ -19,7 +19,7 @@ from django.views.decorators.http import require_POST
 from .decorators import patient_required
 from .forms import PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm, ProfileForm
 from .credential_pdf import build_credential_pdf
-from .models import BankAccount, DiscountCampaign, DiscountTicket, Order, OrderItem, PaymentSetting, Product
+from .models import BankAccount, DiscountCampaign, DiscountTicket, Invoice, Order, OrderItem, PaymentSetting, Product
 from .pagination import paginate_items
 from .services import (
     SupabaseError, sign_in, storage_image_bytes, storage_signed_url, update_password, upload_file,
@@ -73,7 +73,20 @@ def _order_rows(orders):
 
 def _cart_data(request):
     value = request.session.get("patient_cart", {})
-    return value if isinstance(value, dict) else {}
+    if not isinstance(value, dict):
+        return {}
+    normalized = {}
+    for key, item in value.items():
+        if not isinstance(item, dict):
+            continue
+        saved = dict(item)
+        saved.setdefault("product_id", str(key).split(":", 1)[0])
+        normalized[str(key)] = saved
+    return normalized
+
+
+def _cart_line_key(product_id, color, size):
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"qrmed:{product_id}:{color}:{size}").hex
 
 
 class DiscountClaimError(Exception):
@@ -151,11 +164,17 @@ def _available_discounts(request):
         claimed_ids = set(DiscountTicket.objects.filter(
             user_id=request.user_profile.id
         ).values_list("campaign_id", flat=True))
+        campaign_ids = [campaign.id for campaign in campaigns]
+        claim_counts = {
+            str(row["campaign_id"]): row["total"]
+            for row in DiscountTicket.objects.filter(campaign_id__in=campaign_ids)
+            .values("campaign_id").annotate(total=Count("id"))
+        }
         result = []
         for campaign in campaigns:
             if not _campaign_is_open(campaign, now) or campaign.id in claimed_ids:
                 continue
-            campaign.claimed_count = DiscountTicket.objects.filter(campaign_id=campaign.id).count()
+            campaign.claimed_count = claim_counts.get(str(campaign.id), 0)
             campaign.remaining_count = max(0, campaign.max_claims - campaign.claimed_count)
             if campaign.remaining_count:
                 result.append(campaign)
@@ -166,21 +185,44 @@ def _available_discounts(request):
 
 def _cart_context(request):
     cart_data = _cart_data(request)
-    products = Product.objects.filter(id__in=list(cart_data), is_active=True)
+    product_ids = {str(item.get("product_id") or "") for item in cart_data.values()}
+    products = {
+        str(product.id): product
+        for product in Product.objects.only(
+            "id", "name", "description", "price", "stock", "image_url", "colors", "sizes", "is_active"
+        ).filter(id__in=product_ids, is_active=True)
+    }
     rows = []
     total = Decimal("0")
-    for product in products:
-        saved = cart_data.get(str(product.id), {})
-        quantity = max(1, min(int(saved.get("quantity", 1)), max(product.stock, 1)))
+    cleaned_cart = {}
+    remaining_stock = {product_id: max(product.stock, 0) for product_id, product in products.items()}
+    for line_key, saved in cart_data.items():
+        product = products.get(str(saved.get("product_id") or ""))
+        if not product:
+            continue
+        try:
+            requested_quantity = int(saved.get("quantity", 1))
+        except (TypeError, ValueError):
+            requested_quantity = 1
+        available = remaining_stock.get(str(product.id), 0)
+        if available <= 0:
+            continue
+        quantity = max(1, min(requested_quantity, available))
+        remaining_stock[str(product.id)] = available - quantity
         line_total = (product.price or Decimal("0")) * quantity
         total += line_total
+        cleaned_cart[line_key] = {**saved, "product_id": str(product.id), "quantity": quantity}
         rows.append({
+            "line_key": line_key,
             "product": product,
             "quantity": quantity,
             "color": saved.get("color", ""),
             "size": saved.get("size", ""),
             "line_total": line_total,
         })
+    if cleaned_cart != cart_data:
+        request.session["patient_cart"] = cleaned_cart
+        request.session.modified = True
     selected_discount = _selected_discount(request, total)
     discount_amount = selected_discount["amount"] if selected_discount and selected_discount["eligible"] else Decimal("0")
     return {
@@ -219,6 +261,8 @@ def global_search(request):
         ("Mis descuentos", "Tickets y cupones disponibles", "patient_discounts"),
         ("Mi ficha médica", "Datos médicos y contactos", "patient_medical_record"),
         ("Mis pedidos", "Seguimiento y código de entrega", "patient_orders"),
+        ("Buzón", "Facturas y documentos recibidos", "patient_mailbox"),
+        ("Pedidos entregados", "Historial de compras finalizadas", "patient_delivered_history"),
         ("Perfil", "Datos de mi cuenta", "patient_profile"),
         ("Configuración", "Preferencias y notificaciones", "patient_configuration"),
     ]
@@ -323,7 +367,7 @@ def store(request):
 @patient_required
 @require_POST
 def cart_add(request, product_id):
-    product = get_object_or_404(Product, id=product_id, is_active=True)
+    product = get_object_or_404(Product, id=product_id, is_active=True, stock__gt=0)
     cart_data = _cart_data(request)
     quantity = max(1, min(int(request.POST.get("quantity", 1)), max(product.stock, 1)))
     colors = product.colors or []
@@ -334,7 +378,25 @@ def cart_add(request, product_id):
         color = colors[0]
     if sizes and size not in sizes:
         size = sizes[0]
-    cart_data[str(product.id)] = {"quantity": quantity, "color": color, "size": size}
+    line_key = _cart_line_key(product.id, color, size)
+    existing_quantity = int(cart_data.get(line_key, {}).get("quantity", 0) or 0)
+    reserved_other = 0
+    for key, item in cart_data.items():
+        if key == line_key or str(item.get("product_id")) != str(product.id):
+            continue
+        try:
+            reserved_other += max(0, int(item.get("quantity", 0) or 0))
+        except (TypeError, ValueError):
+            continue
+    available_for_line = max(0, product.stock - reserved_other)
+    if available_for_line <= 0:
+        messages.error(request, "Ya agregaste todas las unidades disponibles de este producto.")
+        return redirect(request.POST.get("next") or "patient_store")
+    cart_data[line_key] = {
+        "product_id": str(product.id),
+        "quantity": min(available_for_line, existing_quantity + quantity),
+        "color": color, "size": size,
+    }
     request.session["patient_cart"] = cart_data
     request.session.modified = True
     messages.success(request, f"{product.name} se agregó al carrito.")
@@ -343,9 +405,9 @@ def cart_add(request, product_id):
 
 @patient_required
 @require_POST
-def cart_remove(request, product_id):
+def cart_remove(request, line_key):
     cart_data = _cart_data(request)
-    cart_data.pop(str(product_id), None)
+    cart_data.pop(str(line_key), None)
     request.session["patient_cart"] = cart_data
     request.session.modified = True
     messages.success(request, "Producto retirado del carrito.")
@@ -543,6 +605,7 @@ def checkout(request):
                         discount_ticket.used_at = now
                         discount_ticket.order_id = order.id
                         discount_ticket.save(update_fields=["used_at", "order_id"])
+                        cache.delete(f"qrmed-ticket-count:{request.user_profile.id}")
                     for row in cart_context["cart_rows"]:
                         OrderItem(
                             id=uuid.uuid4(), order_id=order.id, product_id=row["product"].id,
@@ -646,6 +709,10 @@ def order_detail(request, order_id):
     order = get_object_or_404(_patient_orders(request), id=order_id)
     _ensure_delivery_code(order)
     row = _order_rows([order])[0]
+    try:
+        row["invoice"] = Invoice.objects.filter(order_id=order.id).first()
+    except DatabaseError:
+        row["invoice"] = None
     row["proof_url"] = storage_signed_url(
         order.payment_proof_path, settings.SUPABASE_PAYMENT_BUCKET,
         access_token=request.session.get("supabase_access_token", ""),
@@ -660,6 +727,45 @@ def order_detail(request, order_id):
     row["list_q"] = query
     row.update({f"list_{key}": value for key, value in pagination.items()})
     return render(request, "panel/patient_order_detail.html", row)
+
+
+@patient_required
+def mailbox(request):
+    try:
+        invoices = list(Invoice.objects.filter(
+            user_id__in={request.user_profile.id, request.patient.id},
+            sent_at__isnull=False,
+        ).order_by("-sent_at"))
+        orders = {
+            str(order.id): order
+            for order in Order.objects.filter(id__in=[invoice.order_id for invoice in invoices])
+        }
+        rows = [
+            {"invoice": invoice, "order": orders.get(str(invoice.order_id))}
+            for invoice in invoices if orders.get(str(invoice.order_id))
+        ]
+        schema_ready = True
+    except DatabaseError:
+        rows, schema_ready = [], False
+    pagination = paginate_items(request, rows)
+    return render(request, "panel/patient_mailbox.html", {
+        "invoice_rows": pagination.pop("items"), "schema_ready": schema_ready,
+        **pagination,
+    })
+
+
+@patient_required
+def delivered_history(request):
+    query = request.GET.get("q", "").strip()
+    queryset = _patient_orders(request).filter(status="delivered")
+    total = queryset.count()
+    if len(query) >= 2:
+        queryset = queryset.filter(order_number__icontains=query)
+    pagination = paginate_items(request, queryset)
+    return render(request, "panel/patient_delivered_history.html", {
+        "rows": _order_rows(pagination.pop("items")),
+        "orders_total": total, "q": query, **pagination,
+    })
 
 
 @patient_required

@@ -1,0 +1,20 @@
+{% load static %}
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crear cuenta · QRMed Emergency</title><link rel="stylesheet" href="{% static 'panel/css/app.css' %}"></head>
+<body class="login-body login-shared register-page"><section class="login-panel"><form method="post" class="login-card register-card">{% csrf_token %}
+  <a class="mobile-login-logo register-brand" href="{% url 'landing' %}"><span class="login-logo"><i data-lucide="qr-code"></i></span> QRMed Emergency</a>
+  <h2>Crea tu cuenta</h2><p class="muted">Ingresa tus datos básicos para comenzar.</p>
+  {% if messages %}{% for message in messages %}<div class="alert error">{{ message }}</div>{% endfor %}{% endif %}
+  {% if form.non_field_errors %}<div class="alert error">{{ form.non_field_errors|join:', ' }}</div>{% endif %}
+  <div class="register-grid">
+    <div><label for="{{ form.first_name.id_for_label }}">Nombres</label>{{ form.first_name }}{% for error in form.first_name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
+    <div><label for="{{ form.last_name.id_for_label }}">Apellidos</label>{{ form.last_name }}{% for error in form.last_name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
+    <div><label for="{{ form.email.id_for_label }}">Correo electrónico</label>{{ form.email }}{% for error in form.email.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
+    <div><label for="{{ form.phone.id_for_label }}">Número de teléfono</label>{{ form.phone }}{% for error in form.phone.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
+    <div><label for="{{ form.password.id_for_label }}">Contraseña</label>{{ form.password }}{% for error in form.password.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
+    <div><label for="{{ form.password_confirm.id_for_label }}">Confirmar contraseña</label>{{ form.password_confirm }}{% for error in form.password_confirm.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
+  </div>
+  <label class="terms-check">{{ form.accept_terms }}<span>Acepto los <a href="{% url 'terms' %}" target="_blank">términos y condiciones</a> y la <a href="{% url 'privacy' %}" target="_blank">política de privacidad</a>.</span></label>
+  {% for error in form.accept_terms.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+  <button class="btn btn-primary btn-large" type="submit">Crear cuenta</button>
+  <p class="register-login-link">¿Ya tienes una cuenta? <a href="{% url 'login' %}">Iniciar sesión</a></p>
+</form></section><section class="login-visual register-visual"><div class="login-qr-art"><i data-lucide="heart-pulse"></i></div><div class="login-copy"><h1>Tu información puede salvar vidas</h1><p>Después del registro completa tu ficha médica y solicita tu pulsera QRMed.</p></div></section><script src="{% static 'panel/vendor/lucide.min.js' %}"></script><script>lucide.createIcons()</script></body></html>

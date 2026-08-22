@@ -41,7 +41,7 @@
               <label>
                 <input type="radio" name="bank_account" value="{{ bank.id }}" {% if selected_bank and bank.id == selected_bank.id %}checked{% endif %}>
                 <span>
-                  <span class="checkout-bank-logo">{% if bank.logo_url %}<img src="{{ bank.logo_url }}" alt="Logo {{ bank.bank_name }}">{% else %}<i data-lucide="landmark"></i>{% endif %}</span>
+                  <span class="checkout-bank-logo">{% if bank.logo_url %}<img src="{{ bank.logo_url }}" alt="Logo {{ bank.bank_name }}" loading="lazy" decoding="async">{% else %}<i data-lucide="landmark"></i>{% endif %}</span>
                   <span><strong>{{ bank.bank_name }}</strong><small>{{ bank.account_type }} · Cuenta {{ bank.account_number|slice:"-4:" }}</small></span>
                   <i data-lucide="circle-check"></i>
                 </span>
@@ -94,7 +94,7 @@
 
     <aside class="patient-card checkout-summary">
       <h2>Resumen del pedido</h2>
-      {% for row in cart_rows %}<div class="checkout-product">{% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}">{% else %}<span class="checkout-product-placeholder"><i data-lucide="package"></i></span>{% endif %}<span><strong>{{ row.product.name }}</strong><small>{{ row.color }} · {{ row.size }} · x{{ row.quantity }}</small></span><b>{{ row.line_total|money }}</b></div>{% endfor %}
+      {% for row in cart_rows %}<div class="checkout-product">{% if row.product.image_url %}<img src="{{ row.product.image_url }}" alt="{{ row.product.name }}" loading="lazy" decoding="async">{% else %}<span class="checkout-product-placeholder"><i data-lucide="package"></i></span>{% endif %}<span><strong>{{ row.product.name }}</strong><small>{{ row.color }} · {{ row.size }} · x{{ row.quantity }}</small></span><b>{{ row.line_total|money }}</b></div>{% endfor %}
       <hr><div><span>Subtotal</span><b>{{ cart_subtotal|money }}</b></div>{% if discount_amount %}<div class="discount-line"><span>Descuento {{ selected_discount.campaign.code }}</span><b>−{{ discount_amount|money }}</b></div>{% endif %}<div><span>Envío</span><b class="green-text">Gratis</b></div><div class="total"><span>Total</span><b>{{ cart_total|money }}</b></div>
       <p data-summary-method><i data-lucide="credit-card"></i><span data-summary-method-text>Transferencia bancaria</span></p><p><i data-lucide="clock"></i> Entrega estimada: 5–8 días hábiles tras confirmar el pago</p>
     </aside>

@@ -32,6 +32,7 @@
       </div>
 
       {% if patient_mode %}
+        {% if invoice and invoice.sent_at %}<section class="order-modal-v3__proof"><h2>Factura del pedido</h2><div class="invoice-inline-actions"><a class="btn btn-muted" href="{% url 'invoice_pdf' invoice.id %}?preview=1" target="_blank"><i data-lucide="eye"></i> Previsualizar</a><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar factura</a></div></section>{% endif %}
         {% if proof_url %}
           <section class="order-modal-v3__proof">
             <h2>Comprobante de pago</h2>
@@ -39,6 +40,7 @@
           </section>
         {% endif %}
       {% else %}
+        {% if invoice %}<section class="order-modal-v3__proof"><h2>Factura {{ invoice.invoice_number }}</h2><div class="invoice-inline-actions"><a class="btn btn-muted" href="{% url 'invoice_pdf' invoice.id %}?preview=1" target="_blank"><i data-lucide="eye"></i> Ver factura</a><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar</a></div></section>{% endif %}
         <form class="order-modal-v3__update" method="post" action="{% url 'order_update' order.id %}">
           {% csrf_token %}
           <h2>Actualizar pedido</h2>

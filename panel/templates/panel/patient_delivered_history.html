@@ -1,0 +1,23 @@
+{% extends 'panel/user_base.html' %}
+{% load panel_extras %}
+{% block title %}Pedidos entregados{% endblock %}
+{% block content %}
+<section class="patient-page delivered-history">
+  <header class="patient-page-heading">
+    <div><h1>Pedidos entregados</h1><p>Historial de pedidos finalizados correctamente.</p></div>
+    <form class="orders-list-search" method="get" data-auto-search><i data-lucide="search"></i><input name="q" value="{{ q }}" placeholder="Buscar pedido..."></form>
+  </header>
+  <div class="delivered-list">
+    {% for row in rows %}
+      <a class="patient-card delivered-row" href="{% url 'patient_order_detail' row.order.id %}">
+        <span><i data-lucide="package-check"></i></span>
+        <div><strong>{{ row.order.order_number }}</strong><small>{{ row.product.name|default:'Producto QRMed' }}{% if row.items|length > 1 %} +{{ row.items|length|add:'-1' }}{% endif %}</small></div>
+        <time>{{ row.order.updated_at|date:'d/m/Y' }}</time><b>{{ row.order.total|money }}</b><i data-lucide="chevron-right"></i>
+      </a>
+    {% empty %}
+      <article class="orders-board-v3__empty"><i data-lucide="package-open"></i><strong>Aún no tienes pedidos entregados</strong><span>Cuando finalice una entrega aparecerá en este historial.</span></article>
+    {% endfor %}
+  </div>
+  {% include 'panel/partials/pagination.html' %}
+</section>
+{% endblock %}
