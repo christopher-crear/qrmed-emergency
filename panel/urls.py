@@ -74,6 +74,7 @@ urlpatterns = [
     path("mi/ficha/<int:step>/", patient_views.medical_record, name="patient_medical_record"),
     path("mi/pedidos/", patient_views.orders, name="patient_orders"),
     path("mi/pedidos/<uuid:order_id>/", patient_views.order_detail, name="patient_order_detail"),
+    path("mi/pedidos/<uuid:order_id>/confirmar-entrega/", patient_views.delivery_confirm, name="patient_delivery_confirm"),
     path("mi/buzon/", patient_views.mailbox, name="patient_mailbox"),
     path("mi/entregados/", patient_views.delivered_history, name="patient_delivered_history"),
     path("mi/perfil/", patient_views.profile, name="patient_profile"),

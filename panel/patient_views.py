@@ -15,6 +15,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
 from .decorators import patient_required
@@ -114,6 +115,18 @@ def _cart_data(request):
 def _cart_line_key(product_id, color, size):
     """Identificador único de una selección, incluso si repite producto/variante."""
     return uuid.uuid4().hex
+
+
+def _persist_cart_removal(request, line_key):
+    """Elimina una línea y fuerza su persistencia en cached_db."""
+    cart_data = dict(_cart_data(request))
+    removed = cart_data.pop(str(line_key), None)
+    request.session.pop("patient_cart", None)
+    request.session["patient_cart"] = dict(cart_data)
+    request.session.pop("checkout_token", None)
+    request.session.modified = True
+    request.session.save()
+    return removed
 
 
 class DiscountClaimError(Exception):
@@ -468,15 +481,18 @@ def cart_add(request, product_id):
 @patient_required
 @require_POST
 def cart_remove(request, line_key):
-    cart_data = _cart_data(request)
-    cart_data.pop(str(line_key), None)
-    request.session["patient_cart"] = cart_data
-    request.session.modified = True
-    messages.success(request, "Producto retirado del carrito.")
+    # Crea un diccionario nuevo y lo guarda inmediatamente. Esto evita que el
+    # backend cached_db conserve una copia anterior de la sesión en Render.
+    removed = _persist_cart_removal(request, line_key)
+    if removed is None:
+        messages.error(request, "Ese producto ya no estaba en el carrito. Se actualizó la lista.")
+    else:
+        messages.success(request, "Producto retirado del carrito.")
     return redirect("patient_cart")
 
 
 @patient_required
+@never_cache
 def cart(request):
     context = _cart_context(request)
     try:
@@ -751,7 +767,9 @@ def checkout(request):
                 request.session.pop("discount_ticket_id", None)
                 request.session.pop("checkout_token", None)
                 request.session.modified = True
-                for admin_id in Profile.objects.filter(role__in=["admin", "administrador"]).values_list("id", flat=True):
+                for admin_id in Profile.objects.filter(
+                    Q(role__iexact="admin") | Q(role__iexact="administrador"), is_active=True,
+                ).values_list("id", flat=True):
                     cache.delete(f"qrmed-notifications:{admin_id}")
                 messages.success(request, f"Pedido {order.order_number} enviado para validar el pago.")
                 return redirect("patient_checkout_success", order_id=order.id)
@@ -870,6 +888,36 @@ def order_detail(request, order_id):
     row["from_delivered"] = from_delivered
     row.update({f"list_{key}": value for key, value in pagination.items()})
     return render(request, "panel/patient_order_detail.html", row)
+
+
+@patient_required
+@require_POST
+def delivery_confirm(request, order_id):
+    order = get_object_or_404(_patient_orders(request), id=order_id)
+    if str(order.status or "").lower() != "shipped":
+        messages.error(request, "El código solo puede confirmarse cuando el pedido está enviado.")
+        return redirect("patient_order_detail", order_id=order.id)
+    entered_code = re.sub(r"\D", "", str(request.POST.get("delivery_code") or ""))
+    expected_code = re.sub(r"\D", "", str(order.tracking_number or ""))
+    if len(entered_code) != len(expected_code) or not secrets.compare_digest(entered_code, expected_code):
+        messages.error(request, "El código de entrega es incorrecto. Solicítalo nuevamente al motorizado.")
+        return redirect("patient_order_detail", order_id=order.id)
+    now = timezone.now()
+    with transaction.atomic():
+        locked_order = Order.objects.select_for_update().get(id=order.id)
+        if str(locked_order.status or "").lower() != "shipped":
+            messages.info(request, "El pedido ya fue actualizado.")
+            return redirect("patient_order_detail", order_id=order.id)
+        locked_order.status = "delivered"
+        locked_order.updated_at = now
+        locked_order.save(update_fields=["status", "updated_at"])
+    cache.delete(f"qrmed-notifications:{request.user_profile.id}")
+    for admin_id in Profile.objects.filter(
+        Q(role__iexact="admin") | Q(role__iexact="administrador"), is_active=True,
+    ).values_list("id", flat=True):
+        cache.delete(f"qrmed-notifications:{admin_id}")
+    messages.success(request, "Entrega confirmada. El pedido pasó a estado entregado.")
+    return redirect("patient_delivered_history")
 
 
 @patient_required

@@ -80,16 +80,45 @@ def _notification_candidates(profile, patient, is_admin, preferences, needs_medi
                 "icon": "notebook-tabs",
             })
         if preferences.get("order_updates", True):
+            cancelled_orders = Order.objects.only(
+                "id", "order_number", "status", "payment_rejection_reason",
+                "payment_reviewed_at", "updated_at",
+            ).filter(
+                user_id__in={profile.id, patient.id}, status="cancelled",
+            ).exclude(
+                Q(payment_rejection_reason__isnull=True) | Q(payment_rejection_reason="")
+            ).order_by("-payment_reviewed_at", "-updated_at")[:5]
+            for order in cancelled_orders:
+                reviewed_key = order.payment_reviewed_at.isoformat() if order.payment_reviewed_at else "cancelled"
+                notifications.append({
+                    "key": f"patient-payment-rejected:{order.id}:{reviewed_key}",
+                    "title": "Pedido cancelado",
+                    "text": f"{order.order_number} · {order.payment_rejection_reason}",
+                    "target": reverse("patient_order_detail", kwargs={"order_id": order.id}),
+                    "icon": "circle-x",
+                })
             patient_orders = Order.objects.only(
-                "id", "order_number", "status", "created_at"
+                "id", "order_number", "status", "created_at", "estimated_delivery"
             ).filter(user_id__in={profile.id, patient.id}).exclude(
                 status__in=["delivered", "cancelled"]
             ).order_by("-created_at")[:5]
             for order in patient_orders:
+                if order.status in {"production", "in_production"}:
+                    title = "Pago aprobado: pedido en producción"
+                    detail = (
+                        f"Entrega estimada: {order.estimated_delivery:%d/%m/%Y}"
+                        if order.estimated_delivery else order.order_number
+                    )
+                elif order.status == "shipped":
+                    title = "Pedido enviado"
+                    detail = "Solicita el código al motorizado para confirmar la entrega."
+                else:
+                    title = "Actualización de pedido"
+                    detail = f"{order.order_number} · {order.status}"
                 notifications.append({
                     "key": f"patient-order:{order.id}:{order.status}",
-                    "title": "Actualización de pedido",
-                    "text": f"{order.order_number} · {order.status}",
+                    "title": title,
+                    "text": detail,
                     "target": reverse("patient_order_detail", kwargs={"order_id": order.id}),
                     "icon": "package-check",
                 })

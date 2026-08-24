@@ -4,7 +4,7 @@ import json
 import secrets
 import uuid
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
@@ -146,6 +146,25 @@ def ensure_order_delivery_code(order):
         order.updated_at = timezone.now()
         order.save(update_fields=["tracking_number", "updated_at"])
     return order.tracking_number
+
+
+def apply_payment_decision(order, action, reviewer_id, *, now=None):
+    """Aplica una transición de pago coherente y fácil de probar."""
+    now = now or timezone.now()
+    order.payment_reviewed_at = now
+    order.payment_reviewed_by = reviewer_id
+    order.updated_at = now
+    if action == "approve":
+        order.payment_rejection_reason = None
+        order.status = "production"
+        order.estimated_delivery = timezone.localdate(now) + timedelta(days=7)
+    elif action == "reject":
+        order.payment_rejection_reason = order.payment_rejection_reason or "Comprobante no válido"
+        order.status = "cancelled"
+        order.estimated_delivery = None
+    else:
+        raise ValueError("Acción de pago no válida")
+    return order
 
 
 def _orders_context(request):
@@ -991,32 +1010,37 @@ def payment_detail(request, order_id):
 @admin_required
 @require_POST
 def payment_review(request, order_id, action):
-    order = get_object_or_404(Order, id=order_id)
-    if action == "approve":
-        order.payment_rejection_reason = None
-        order.payment_reviewed_at = timezone.now()
-        order.payment_reviewed_by = request.admin_profile.id
-        if order.status in {"pending", "confirmed"}:
-            existing_statuses = set(Order.objects.values_list("status", flat=True))
-            order.status = "in_production" if "in_production" in existing_statuses else "production"
-        messages.success(request, "Pago aprobado correctamente.")
-    elif action == "reject":
-        reason = request.POST.get("reason", "Comprobante no válido").strip()
-        order.payment_rejection_reason = reason
-        order.payment_reviewed_at = timezone.now()
-        order.payment_reviewed_by = request.admin_profile.id
-        messages.success(request, "Pago rechazado y marcado para revisión del cliente.")
-    else:
+    if action not in {"approve", "reject"}:
         messages.error(request, "Acción de pago no válida.")
         return redirect("payments")
-    order.updated_at = timezone.now()
-    order.save()
+    with transaction.atomic():
+        order = get_object_or_404(Order.objects.select_for_update(), id=order_id)
+        if action == "reject":
+            order.payment_rejection_reason = (
+                request.POST.get("reason", "Comprobante no válido").strip()
+                or "Comprobante no válido"
+            )
+        apply_payment_decision(order, action, request.admin_profile.id)
+        order.save(update_fields=[
+            "payment_rejection_reason", "payment_reviewed_at", "payment_reviewed_by",
+            "status", "estimated_delivery", "updated_at",
+        ])
+    messages.success(
+        request,
+        "Pago aprobado. El pedido pasó a producción con entrega estimada en 7 días."
+        if action == "approve"
+        else "Pago rechazado. El pedido fue cancelado y se notificó el motivo al cliente.",
+    )
+    cache.delete(f"qrmed-notifications:{order.user_id}")
+    for admin_id in Profile.objects.filter(
+        Q(role__iexact="admin") | Q(role__iexact="administrador"), is_active=True,
+    ).values_list("id", flat=True):
+        cache.delete(f"qrmed-notifications:{admin_id}")
     if action == "approve":
         try:
             _ensure_invoice(order, request.admin_profile.id)
         except DatabaseError:
             messages.warning(request, "El pago se aprobó, pero debes ejecutar supabase_actualizacion_completa.sql para generar la factura.")
-        cache.delete(f"qrmed-notifications:{order.user_id}")
         return redirect("payment_detail", order_id=order.id)
     return redirect("payments")
 

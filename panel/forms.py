@@ -388,7 +388,7 @@ class OrderUpdateForm(StyledFormMixin, forms.ModelForm):
         model = Order
         fields = ["status", "estimated_delivery", "tracking_number"]
         widgets = {
-            "status": forms.Select(choices=[("pending", "Pendiente"), ("confirmed", "Confirmado"), ("production", "En producción"), ("shipped", "Enviado"), ("delivered", "Entregado"), ("cancelled", "Cancelado")]),
+            "status": forms.Select(choices=[("pending", "Pendiente"), ("confirmed", "Confirmado"), ("production", "En producción"), ("shipped", "Enviado"), ("cancelled", "Cancelado")]),
             "estimated_delivery": forms.DateInput(attrs={"type": "date"}),
             "tracking_number": forms.TextInput(attrs={"readonly": True}),
         }

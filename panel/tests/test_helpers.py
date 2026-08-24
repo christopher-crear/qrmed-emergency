@@ -14,7 +14,7 @@ from panel.forms import (
     ProfileForm, patient_sex_choices, validate_ecuador_cedula,
 )
 from panel.patient_utils import medical_profile_is_complete
-from panel.patient_views import _cart_line_key, _discount_amount
+from panel.patient_views import _cart_line_key, _discount_amount, _persist_cart_removal
 from panel.models import Patient
 from panel.services import (
     SupabaseError, normalize_storage_path, public_storage_url, sign_in,
@@ -22,7 +22,7 @@ from panel.services import (
     storage_signed_url, upload_file, versioned_media_url,
 )
 from panel.templatetags.panel_extras import initials, money, payment_method_label, status_label, status_step
-from panel.views import _customer_avatar_url
+from panel.views import _customer_avatar_url, apply_payment_decision
 
 
 class TemplateFilterTests(SimpleTestCase):
@@ -179,6 +179,42 @@ class CartAndCheckoutTests(SimpleTestCase):
         original = {key: dict(value) for key, value in cart.items()}
         self.assertEqual(str(_discount_amount(campaign, 32)), "16.00")
         self.assertEqual(cart, original)
+
+    def test_cart_removal_is_persisted_immediately(self):
+        class FakeSession(dict):
+            modified = False
+
+            def save(self):
+                self.saved = True
+
+        session = FakeSession({
+            "patient_cart": {
+                "keep": {"product_id": "a", "quantity": 1},
+                "remove": {"product_id": "b", "quantity": 1},
+            },
+            "checkout_token": "stale",
+        })
+        request = SimpleNamespace(session=session)
+        removed = _persist_cart_removal(request, "remove")
+        self.assertEqual(removed["product_id"], "b")
+        self.assertEqual(list(session["patient_cart"]), ["keep"])
+        self.assertNotIn("checkout_token", session)
+        self.assertTrue(session.modified)
+        self.assertTrue(session.saved)
+
+    def test_payment_approval_sets_production_and_seven_day_delivery(self):
+        now = datetime(2026, 8, 24, 15, 0, tzinfo=timezone.utc)
+        order = SimpleNamespace(payment_rejection_reason="Anterior")
+        apply_payment_decision(order, "approve", uuid.uuid4(), now=now)
+        self.assertEqual(order.status, "production")
+        self.assertEqual(str(order.estimated_delivery), "2026-08-31")
+        self.assertIsNone(order.payment_rejection_reason)
+
+    def test_payment_rejection_cancels_order_and_keeps_reason(self):
+        order = SimpleNamespace(payment_rejection_reason="Imagen ilegible")
+        apply_payment_decision(order, "reject", uuid.uuid4())
+        self.assertEqual(order.status, "cancelled")
+        self.assertEqual(order.payment_rejection_reason, "Imagen ilegible")
 
 
 class DemoServiceTests(SimpleTestCase):

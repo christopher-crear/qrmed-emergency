@@ -34,14 +34,14 @@
           <strong class="order-card-v3__total">{{ row.order.total|money }}</strong>
         </div>
 
-        <div class="order-track-v3" aria-label="Progreso del pedido: {{ row.order.status|status_label }}">
+        {% if row.order.status == 'cancelled' %}<div class="order-card-cancelled"><i data-lucide="circle-x"></i><span><strong>Pedido cancelado</strong><small>{{ row.order.payment_rejection_reason|default:'El pago no fue aprobado.' }}</small></span></div>{% else %}<div class="order-track-v3" aria-label="Progreso del pedido: {{ row.order.status|status_label }}">
           {% for i in '1234' %}
             <div class="order-track-v3__step {% if forloop.counter < step %}is-done{% elif forloop.counter == step %}is-current{% endif %}">
               <span>{% if forloop.counter < step %}<i data-lucide="check"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
               <small>{% if forloop.counter == 1 %}Confirmado{% elif forloop.counter == 2 %}Producción{% elif forloop.counter == 3 %}Enviado{% else %}Entregado{% endif %}</small>
             </div>
           {% endfor %}
-        </div>
+        </div>{% endif %}
         {% if row.order.status == 'delivered' and row.invoice %}<span class="order-invoice-preview" role="button" tabindex="0" data-invoice-preview="{% url 'invoice_pdf' row.invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar factura</span>{% endif %}
       </a>
     {% endwith %}{% empty %}

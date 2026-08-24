@@ -39,8 +39,21 @@
         <div><span>Fecha del pedido</span><strong>{{ order.created_at|date:'d/m/Y' }}</strong></div>
         <div><span>Entrega estimada</span><strong>{{ order.estimated_delivery|date:'d/m/Y'|default:'Por definir' }}</strong></div>
         <div><span>Estado</span><strong>{{ order.status|status_label }}</strong></div>
-        <div class="delivery-code-card"><span>Código de entrega</span><strong>{{ order.tracking_number }}</strong><small>{% if patient_mode %}Entrégalo al motorizado únicamente cuando recibas tu pulsera.{% else %}Confírmalo con el cliente al entregar la pulsera.{% endif %}</small></div>
+        {% if not patient_mode %}<div class="delivery-code-card"><span>Código para el motorizado</span><strong>{{ order.tracking_number }}</strong><small>El motorizado debe comunicar este código al cliente únicamente cuando entregue físicamente la manilla.</small></div>{% endif %}
       </div>
+
+      {% if patient_mode and order.status == 'shipped' %}
+        <form class="delivery-confirm-card" method="post" action="{% url 'patient_delivery_confirm' order.id %}">
+          {% csrf_token %}
+          <span><i data-lucide="package-check"></i></span>
+          <div><h2>Confirmar que recibiste la manilla</h2><p>Pide el código al motorizado después de recibirla e ingrésalo aquí.</p></div>
+          <label><span>Código de entrega</span><input type="text" name="delivery_code" required inputmode="numeric" pattern="[0-9]{6,7}" maxlength="7" autocomplete="one-time-code" data-numeric placeholder="000000"></label>
+          <button class="btn btn-primary"><i data-lucide="check-check"></i>Confirmar entrega</button>
+        </form>
+      {% endif %}
+      {% if patient_mode and order.status == 'cancelled' %}
+        <section class="order-cancelled-detail"><i data-lucide="circle-x"></i><div><h2>Pedido cancelado</h2><p><strong>Motivo del rechazo:</strong> {{ order.payment_rejection_reason|default:'El comprobante de pago no fue aprobado.' }}</p></div></section>
+      {% endif %}
 
       {% if patient_mode %}
         {% if invoice and invoice.sent_at %}<section class="order-modal-v3__proof"><h2>Factura del pedido</h2><div class="invoice-inline-actions"><button type="button" class="btn btn-muted" data-invoice-preview="{% url 'invoice_pdf' invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar</button><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar factura</a></div></section>{% else %}<section class="order-modal-v3__proof order-document-pending"><i data-lucide="file-clock"></i><div><h2>Factura pendiente</h2><p>Estará disponible aquí cuando el administrador valide el pago y la envíe a tu buzón.</p></div></section>{% endif %}
