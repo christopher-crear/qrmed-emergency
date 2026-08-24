@@ -24,7 +24,8 @@ Aplicación de dos roles construida con Django 6, PostgreSQL/Supabase, Supabase 
 - Iconos incluidos localmente para que el menú funcione sin depender de un CDN.
 - Configuración lista para Render mediante `render.yaml` y `build.sh`.
 - Login compartido con redirección automática según `profiles.role`.
-- Registro compatible con el enum real de `profiles.role`; detecta automáticamente etiquetas como `user`, `patient` o sus equivalentes existentes y evita perfiles huérfanos en Auth.
+- Registro compatible con el enum real de `profiles.role`; conserva el rol exacto creado por el trigger de Supabase (incluidas mayúsculas/minúsculas) y separa el alta de la ficha médica para no insertar cédulas provisionales inválidas.
+- Recuperación de contraseña en dos pasos: envío del enlace y pantalla pública para escribir y confirmar la nueva contraseña.
 - Panel del paciente con dashboard, credencial QR reversible, tienda, carrito y checkout en tres pasos (envío, pago y confirmación), comprobante real, pantalla de pedido recibido, ficha médica, pedidos, perfil y preferencias.
 - Cada paciente solo consulta su propia ficha y los pedidos vinculados a su UUID de Auth.
 
@@ -51,6 +52,16 @@ SUPABASE_URL=https://PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
+
+En **Supabase → Authentication → URL Configuration → Redirect URLs** agrega también:
+
+```text
+https://qrmed-emergency-yp3g.onrender.com/recuperar-contrasena/nueva/
+http://127.0.0.1:8000/recuperar-contrasena/nueva/
+http://localhost:8000/recuperar-contrasena/nueva/
+```
+
+Sin esa autorización Supabase no podrá devolver al usuario a la pantalla donde escribe y confirma la contraseña nueva. Para producción configura además un SMTP propio; el proveedor de prueba de Supabase tiene límites reducidos.
 
 Obtén `DATABASE_URL` en Supabase: **Project → Connect → Transaction pooler**. Para la aplicación Django usa el puerto `6543`; es compatible con IPv4 y permite reutilizar mejor las conexiones. El proyecto desactiva automáticamente consultas preparadas y cursores de servidor al detectar ese puerto. `DATABASE_CONN_MAX_AGE=0` evita que cada proceso de Django reserve una conexión de forma persistente.
 

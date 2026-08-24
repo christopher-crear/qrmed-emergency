@@ -1,8 +1,10 @@
 from functools import wraps
+import uuid
 
 from django.contrib import messages
 from django.db.models import Q
 from django.shortcuts import redirect
+from django.utils import timezone
 
 from .models import Patient, Profile
 
@@ -64,7 +66,7 @@ def patient_required(view):
             messages.error(request, "Tu cuenta no tiene un perfil válido.")
             return redirect("login")
         role = (profile.role or "").lower()
-        if role not in {"user", "usuario", "patient", "paciente"} or not profile.is_active:
+        if role not in {"user", "usuario", "patient", "paciente", "client", "cliente"} or not profile.is_active:
             request.session.flush()
             messages.error(request, "Esta cuenta no tiene acceso al panel de paciente.")
             return redirect("login")
@@ -72,9 +74,22 @@ def patient_required(view):
             Q(owner_id=profile.id) | Q(id=profile.id)
         ).order_by("-created_at").first()
         if not patient:
-            request.session.flush()
-            messages.error(request, "Tu cuenta todavía no tiene una ficha médica asociada.")
-            return redirect("login")
+            # El alta de Auth/perfil y la ficha médica son etapas distintas. La
+            # instancia permanece sin guardar hasta validar el primer formulario,
+            # evitando violar restricciones con datos provisionales.
+            if request.resolver_match and request.resolver_match.url_name == "patient_medical_record":
+                name_parts = str(profile.full_name or "").strip().split(maxsplit=1)
+                patient = Patient(
+                    id=uuid.uuid4(), owner_id=profile.id,
+                    first_name=name_parts[0] if name_parts else "",
+                    last_name=name_parts[1] if len(name_parts) > 1 else "",
+                    email=request.session.get("supabase_email", ""),
+                    phone=profile.phone or "", qr_token=uuid.uuid4(),
+                    status="active", created_at=timezone.now(), updated_at=timezone.now(),
+                )
+            else:
+                messages.warning(request, "Completa primero tu ficha médica para continuar.")
+                return redirect("patient_medical_record", step=1)
         request.user_profile = profile
         request.patient = patient
         request.account_profile = profile

@@ -286,6 +286,11 @@ class DemoServiceTests(SimpleTestCase):
         self.assertEqual(_profile_role_value("user"), "user")
         self.assertEqual(_profile_role_value("admin"), "admin")
 
+    @patch("panel.views._profile_role_labels", return_value={"usuario": "Usuario", "administrador": "Administrador"})
+    def test_registration_preserves_enum_letter_case(self, role_labels):
+        self.assertEqual(_profile_role_value("user"), "Usuario")
+        self.assertEqual(_profile_role_value("admin"), "Administrador")
+
     @patch("panel.views.sign_in")
     @patch("panel.views.sign_up")
     def test_registration_recovers_an_auth_account_left_without_profile(self, sign_up_mock, sign_in_mock):
@@ -303,6 +308,35 @@ class DemoServiceTests(SimpleTestCase):
         response = Client().get("/login/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Bienvenido de nuevo")
+
+    def test_password_reset_page_contains_both_password_fields(self):
+        response = Client().get(reverse("password_reset_page"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="password"')
+        self.assertContains(response, 'name="confirmation"')
+        self.assertContains(response, "Crear nueva contraseña")
+
+    @patch("panel.views.update_password")
+    def test_password_reset_updates_with_recovery_token(self, update_password_mock):
+        response = Client().post(
+            reverse("password_reset_complete"),
+            data='{"access_token":"valid-token","password":"NuevaClave123","confirmation":"NuevaClave123"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        update_password_mock.assert_called_once_with("valid-token", "NuevaClave123")
+
+    @patch("panel.views.update_password")
+    def test_password_reset_rejects_mismatched_confirmation(self, update_password_mock):
+        response = Client().post(
+            reverse("password_reset_complete"),
+            data='{"access_token":"valid-token","password":"NuevaClave123","confirmation":"OtraClave123"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("no coinciden", response.json()["error"])
+        update_password_mock.assert_not_called()
 
     @override_settings(DEMO_MODE=True, DEMO_ADMIN_EMAIL="admin@qrmed.ec", DEMO_ADMIN_PASSWORD="admin123")
     def test_demo_login(self):

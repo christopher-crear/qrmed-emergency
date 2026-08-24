@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260823-qrmed-v3">
+  <link rel="stylesheet" href="{% static 'panel/css/app.css' %}?v=20260824-qrmed-v4">
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -17,19 +17,19 @@
       <span class="brand-name">QRMed Emergency</span>
     </a>
     <nav class="side-nav">
-      <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"><i data-lucide="house"></i><span>Inicio</span></a>
-      <a href="{% url 'patients' %}" class="{% if 'patient' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="users"></i><span>Pacientes</span></a>
-      <a href="{% url 'payments' %}" class="{% if 'payment' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="clipboard-check"></i><span>Validar pagos</span></a>
-      <a href="{% url 'products' %}" class="{% if 'product' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="boxes"></i><span>Productos</span></a>
-      <a href="{% url 'orders' %}" class="{% if 'order' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="package"></i><span>Pedidos</span></a>
-      <a href="{% url 'users' %}" class="{% if request.resolver_match.url_name == 'users' %}active{% endif %}"><i data-lucide="user-cog"></i><span>Usuarios</span></a>
-      <a href="{% url 'admin_mailbox' %}" class="{% if 'mailbox' in request.resolver_match.url_name or 'activation' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="inbox"></i><span>Buzón</span></a>
-      <a href="{% url 'profile' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="user-round"></i><span>Perfil</span></a>
-      <a href="{% url 'banks' %}" class="{% if 'bank' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="landmark"></i><span>Bancos y cuentas</span></a>
-      <a href="{% url 'discounts' %}" class="{% if 'discount' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="ticket-percent"></i><span>Descuentos</span></a>
-      <a href="{% url 'configuration' %}" class="{% if request.resolver_match.url_name == 'configuration' %}active{% endif %}"><i data-lucide="settings"></i><span>Configuración</span></a>
+      <a href="{% url 'dashboard' %}" data-tooltip="Inicio" aria-label="Inicio" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"><i data-lucide="house"></i><span>Inicio</span></a>
+      <a href="{% url 'patients' %}" data-tooltip="Pacientes" aria-label="Pacientes" class="{% if 'patient' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="users"></i><span>Pacientes</span></a>
+      <a href="{% url 'payments' %}" data-tooltip="Validar pagos" aria-label="Validar pagos" class="{% if 'payment' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="clipboard-check"></i><span>Validar pagos</span></a>
+      <a href="{% url 'products' %}" data-tooltip="Productos" aria-label="Productos" class="{% if 'product' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="boxes"></i><span>Productos</span></a>
+      <a href="{% url 'orders' %}" data-tooltip="Pedidos" aria-label="Pedidos" class="{% if 'order' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="package"></i><span>Pedidos</span></a>
+      <a href="{% url 'users' %}" data-tooltip="Usuarios" aria-label="Usuarios" class="{% if request.resolver_match.url_name == 'users' %}active{% endif %}"><i data-lucide="user-cog"></i><span>Usuarios</span></a>
+      <a href="{% url 'admin_mailbox' %}" data-tooltip="Buzón" aria-label="Buzón" class="{% if 'mailbox' in request.resolver_match.url_name or 'activation' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="inbox"></i><span>Buzón</span></a>
+      <a href="{% url 'profile' %}" data-tooltip="Perfil" aria-label="Perfil" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="user-round"></i><span>Perfil</span></a>
+      <a href="{% url 'banks' %}" data-tooltip="Bancos y cuentas" aria-label="Bancos y cuentas" class="{% if 'bank' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="landmark"></i><span>Bancos y cuentas</span></a>
+      <a href="{% url 'discounts' %}" data-tooltip="Descuentos" aria-label="Descuentos" class="{% if 'discount' in request.resolver_match.url_name %}active{% endif %}"><i data-lucide="ticket-percent"></i><span>Descuentos</span></a>
+      <a href="{% url 'configuration' %}" data-tooltip="Configuración" aria-label="Configuración" class="{% if request.resolver_match.url_name == 'configuration' %}active{% endif %}"><i data-lucide="settings"></i><span>Configuración</span></a>
     </nav>
-    <a class="logout-link" href="{% url 'logout' %}"><i data-lucide="log-out"></i><span>Cerrar sesión</span></a>
+    <a class="logout-link" href="{% url 'logout' %}" data-tooltip="Cerrar sesión" aria-label="Cerrar sesión"><i data-lucide="log-out"></i><span>Cerrar sesión</span></a>
   </aside>
 
   <header class="topbar">
@@ -75,7 +75,7 @@
   </div>
   {% include 'panel/partials/invoice_preview_modal.html' %}
   <script src="{% static 'panel/vendor/lucide.min.js' %}"></script>
-  <script src="{% static 'panel/js/app.js' %}?v=20260823-qrmed-v3"></script>
+  <script src="{% static 'panel/js/app.js' %}?v=20260824-qrmed-v4"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

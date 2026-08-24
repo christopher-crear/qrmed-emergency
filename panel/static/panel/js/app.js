@@ -11,6 +11,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.classList.toggle('sidebar-expanded');
     localStorage.setItem('qrmed-sidebar', document.body.classList.contains('sidebar-expanded') ? 'expanded' : 'compact');
   });
+  const tooltip = document.createElement('div');
+  tooltip.className = 'menu-tooltip';
+  tooltip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tooltip);
+  const hideMenuTooltip = () => tooltip.classList.remove('show');
+  document.querySelectorAll('[data-tooltip]').forEach(item => {
+    item.addEventListener('mouseenter', () => {
+      if (window.innerWidth <= 760 || document.body.classList.contains('sidebar-expanded')) return;
+      const rect = item.getBoundingClientRect();
+      tooltip.textContent = item.dataset.tooltip;
+      tooltip.style.left = `${rect.right + 10}px`;
+      tooltip.style.top = `${rect.top + (rect.height / 2)}px`;
+      tooltip.classList.add('show');
+    });
+    item.addEventListener('mouseleave', hideMenuTooltip);
+    item.addEventListener('blur', hideMenuTooltip);
+  });
+  window.addEventListener('resize', hideMenuTooltip);
+  sidebar?.addEventListener('scroll', hideMenuTooltip);
   const trigger = document.getElementById('profileTrigger'), menu = document.getElementById('profileMenu');
   const notificationButton = document.getElementById('notificationButton'), notificationMenu = document.getElementById('notificationMenu');
   trigger?.addEventListener('click', e => { e.stopPropagation(); notificationMenu?.classList.remove('show'); menu.classList.toggle('show'); });

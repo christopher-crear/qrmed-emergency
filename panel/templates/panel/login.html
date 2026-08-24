@@ -13,7 +13,7 @@
     <form method="post" class="login-card">{% csrf_token %}
       <div class="mobile-login-logo"><span class="login-logo"><i data-lucide="qr-code"></i></span> QRMed Emergency</div>
       <span class="sr-only">Bienvenido de nuevo</span><h2>Bienvenido de vuelta</h2><p class="muted">Ingresa con tu cuenta de administrador o paciente</p>
-      {% if messages %}{% for message in messages %}<div class="alert error">{{ message }}</div>{% endfor %}{% endif %}
+      {% if messages %}{% for message in messages %}<div class="alert {{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}{% endif %}
       {% if demo_mode %}<div class="alert info"><strong>Acceso de prueba</strong><br>admin@qrmed.ec · admin123</div>{% endif %}
       <label>Correo electrónico</label><div class="input-icon"><i data-lucide="mail"></i><input type="email" name="email" value="{{ login_email|default_if_none:'' }}{% if demo_mode and not login_email %}admin@qrmed.ec{% endif %}" required placeholder="tu@correo.com"></div>
       <label>Contraseña</label><div class="input-icon"><i data-lucide="lock-keyhole"></i><input id="loginPassword" type="password" name="password" value="{% if demo_mode %}admin123{% endif %}" required><button type="button" aria-label="Mostrar contraseña" onclick="const e=document.getElementById('loginPassword');e.type=e.type==='password'?'text':'password'"><i data-lucide="eye"></i></button></div>

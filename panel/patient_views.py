@@ -809,6 +809,9 @@ def medical_record(request, step):
     form_classes = {1: PatientPersonalForm, 2: PatientMedicalForm, 3: PatientEmergencyForm}
     if step not in form_classes:
         return redirect("patient_medical_record", step=1)
+    if request.patient._state.adding and step != 1:
+        messages.info(request, "Completa primero tus datos personales.")
+        return redirect("patient_medical_record", step=1)
     form = form_classes[step](request.POST or None, request.FILES or None, instance=request.patient)
     if request.method == "POST" and form.is_valid():
         patient = form.save(commit=False)
@@ -827,7 +830,11 @@ def medical_record(request, step):
         if step == 1 and request.FILES.get("photo"):
             update_fields.append("photo_path")
         try:
-            patient.save(update_fields=list(dict.fromkeys(update_fields)))
+            if patient._state.adding:
+                patient.created_at = patient.created_at or timezone.now()
+                patient.save(force_insert=True)
+            else:
+                patient.save(update_fields=list(dict.fromkeys(update_fields)))
         except IntegrityError as exc:
             if "patients_sex_check" not in str(exc):
                 raise

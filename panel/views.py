@@ -408,7 +408,12 @@ def _profile_role_labels():
                   and not a.attisdropped
                 order by e.enumsortorder
             """)
-            return {str(row[0]).lower() for row in cursor.fetchall()}
+            # El enum de PostgreSQL distingue mayúsculas y minúsculas. Se
+            # conserva la etiqueta exacta y solo se normaliza para buscarla.
+            return {
+                str(row[0]).strip().casefold(): str(row[0]).strip()
+                for row in cursor.fetchall()
+            }
     except DatabaseError:
         return set()
 
@@ -423,17 +428,17 @@ def _profile_role_value(kind):
     labels = _profile_role_labels()
     for candidate in candidates:
         if candidate in labels:
-            return candidate
+            return labels[candidate] if isinstance(labels, dict) else candidate
     try:
         current = {
-            str(value or "").lower()
+            str(value or "").strip().casefold(): str(value or "").strip()
             for value in Profile.objects.exclude(role__isnull=True).values_list("role", flat=True)
         }
     except DatabaseError:
         current = set()
     for candidate in candidates:
         if candidate in current:
-            return candidate
+            return current[candidate]
     return candidates[0]
 
 
@@ -475,7 +480,10 @@ def register(request):
             full_name = f"{data['first_name']} {data['last_name']}".strip()
             user_role_value = _profile_role_value("user")
             with transaction.atomic():
-                profile = Profile.objects.filter(id=user_id).first() if recovered_existing_auth else None
+                # Algunos proyectos crean public.profiles mediante un trigger
+                # de Auth. En ese caso se respeta el rol válido asignado por la
+                # base y únicamente se completan los datos visibles.
+                profile = Profile.objects.filter(id=user_id).first()
                 if profile:
                     # El usuario demostró conocer la contraseña. Se completan sus
                     # datos, pero nunca se cambia su rol ni se reactiva una cuenta
@@ -485,26 +493,15 @@ def register(request):
                     profile.updated_at = now
                     profile.save(update_fields=["full_name", "phone", "updated_at"])
                 else:
-                    profile, _ = Profile.objects.update_or_create(
-                        id=user_id,
-                        defaults={
-                            "full_name": full_name, "phone": data["phone"],
-                            "role": user_role_value, "is_active": True,
-                            "preferences": {"medical_profile_pending": True},
-                            "updated_at": now,
-                        },
+                    profile = Profile(
+                        id=user_id, full_name=full_name, phone=data["phone"],
+                        role=user_role_value, is_active=True,
+                        preferences={"medical_profile_pending": True},
+                        created_at=now, updated_at=now,
                     )
-                    if not profile.created_at:
-                        profile.created_at = now
-                        profile.save(update_fields=["created_at"])
-                if not Patient.objects.filter(Q(owner_id=user_id) | Q(id=user_id)).exists():
-                    Patient(
-                        id=uuid.uuid4(), owner_id=user_id,
-                        first_name=data["first_name"], last_name=data["last_name"],
-                        id_number=f"PEND-{uuid.uuid4().hex[:12].upper()}",
-                        email=data["email"], phone=data["phone"], qr_token=uuid.uuid4(),
-                        status="active", created_at=now, updated_at=now,
-                    ).save(force_insert=True)
+                    profile.save(force_insert=True)
+                # La ficha no se inserta con una cédula artificial: se crea al
+                # guardar el paso 1, cuando ya existen todos los datos exigidos.
         except (SupabaseError, DatabaseError, IntegrityError, TypeError, ValueError) as exc:
             # Supabase Auth no participa en la transacción PostgreSQL de Django.
             # Si falla la creación del perfil, retiramos la cuenta recién creada
@@ -580,7 +577,7 @@ def login_view(request):
                 messages.error(request, "Tu cuenta está inactiva. Puedes solicitar su reactivación.")
                 return render(request, "panel/login.html", {"show_activation_request": True, "login_email": email})
             role = (profile_obj.role or "").lower()
-            if role not in {"admin", "administrador", "user", "usuario", "patient", "paciente"}:
+            if role not in {"admin", "administrador", "user", "usuario", "patient", "paciente", "client", "cliente"}:
                 raise SupabaseError("El rol de esta cuenta no está habilitado.")
             request.session.cycle_key()
             request.session["supabase_user_id"] = user["id"]
@@ -644,6 +641,7 @@ def password_reset_complete(request):
         if password != confirmation:
             raise SupabaseError("Las contraseñas no coinciden.")
         update_password(access_token, password)
+        messages.success(request, "Tu contraseña fue actualizada. Ya puedes iniciar sesión.")
         return JsonResponse({"ok": True, "redirect": reverse("login")})
     except (json.JSONDecodeError, SupabaseError) as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=400)
