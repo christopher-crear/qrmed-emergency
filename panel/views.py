@@ -34,7 +34,7 @@ from .models import (
 from .pagination import paginate_items
 from .patient_utils import medical_profile_is_complete
 from .services import (
-    SupabaseError, get_auth_user, request_password_reset, sign_in, sign_up, storage_image_bytes, storage_image_signed_url, storage_signed_url,
+    SupabaseError, delete_auth_user, get_auth_user, request_password_reset, sign_in, sign_up, storage_image_bytes, storage_image_signed_url, storage_signed_url,
     update_password, upload_file, versioned_media_url,
 )
 
@@ -76,10 +76,24 @@ def _decorate_bank_assets(bank):
     return bank
 
 
+def _build_order_lines(items, products):
+    line_items = []
+    for item in items:
+        product_item = products.get(str(item.product_id)) if item.product_id else None
+        line_items.append({
+            "item": item,
+            "product": product_item,
+            "line_total": Decimal(item.unit_price or 0) * int(item.quantity or 0),
+        })
+    return line_items
+
+
 def _order_context(order):
     ensure_order_delivery_code(order)
     items = list(OrderItem.objects.filter(order_id=order.id))
     products = {str(p.id): p for p in Product.objects.filter(id__in=[x.product_id for x in items if x.product_id])}
+    line_items = _build_order_lines(items, products)
+    calculated_subtotal = sum((line["line_total"] for line in line_items), Decimal("0"))
     patient = Patient.objects.filter(
         Q(owner_id=order.user_id) | Q(id=order.user_id)
     ).order_by("-created_at").first()
@@ -102,6 +116,8 @@ def _order_context(order):
     return {
         "order": order,
         "items": items,
+        "line_items": line_items,
+        "order_subtotal": Decimal(order.subtotal or 0) or calculated_subtotal,
         "products_map": products,
         "customer": patient or profile,
         "patient": patient,
@@ -373,34 +389,114 @@ def privacy(request):
     return render(request, "panel/privacy.html")
 
 
+def _profile_role_labels():
+    """Obtiene las etiquetas permitidas por el tipo real de profiles.role."""
+    if connection.vendor != "postgresql":
+        return set()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                select e.enumlabel
+                from pg_catalog.pg_attribute a
+                join pg_catalog.pg_class c on c.oid = a.attrelid
+                join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+                join pg_catalog.pg_type t on t.oid = a.atttypid
+                join pg_catalog.pg_enum e on e.enumtypid = t.oid
+                where n.nspname = 'public'
+                  and c.relname = 'profiles'
+                  and a.attname = 'role'
+                  and not a.attisdropped
+                order by e.enumsortorder
+            """)
+            return {str(row[0]).lower() for row in cursor.fetchall()}
+    except DatabaseError:
+        return set()
+
+
+def _profile_role_value(kind):
+    """Traduce usuario/administrador a una etiqueta aceptada por el enum."""
+    kind = "admin" if kind == "admin" else "user"
+    candidates = {
+        "user": ("user", "usuario", "patient", "paciente", "client", "cliente"),
+        "admin": ("admin", "administrador", "administrator"),
+    }[kind]
+    labels = _profile_role_labels()
+    for candidate in candidates:
+        if candidate in labels:
+            return candidate
+    try:
+        current = {
+            str(value or "").lower()
+            for value in Profile.objects.exclude(role__isnull=True).values_list("role", flat=True)
+        }
+    except DatabaseError:
+        current = set()
+    for candidate in candidates:
+        if candidate in current:
+            return candidate
+    return candidates[0]
+
+
+def _sign_up_or_recover_account(email, password, first_name, last_name, phone):
+    """Repara un registro previo que creó Auth pero no alcanzó a crear profiles."""
+    try:
+        return sign_up(email, password, first_name, last_name, phone)
+    except SupabaseError as exc:
+        detail = str(exc).lower()
+        duplicate_markers = (
+            "already registered", "already been registered", "already exists",
+            "ya está registrado", "ya existe",
+        )
+        if not any(marker in detail for marker in duplicate_markers):
+            raise
+        # Solo se recupera la identidad si la contraseña suministrada es válida.
+        recovered = dict(sign_in(email, password))
+        recovered["_recovered_existing_auth"] = True
+        return recovered
+
+
 def register(request):
     if request.session.get("supabase_user_id"):
         return redirect("patient_dashboard")
     form = RegistrationForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
+        created_auth_user_id = None
         try:
-            result = sign_up(
+            result = _sign_up_or_recover_account(
                 data["email"], data["password"], data["first_name"],
                 data["last_name"], data["phone"],
             )
             user = result.get("user") or {}
             user_id = uuid.UUID(str(user.get("id")))
+            recovered_existing_auth = bool(result.get("_recovered_existing_auth"))
+            created_auth_user_id = None if recovered_existing_auth else user_id
             now = timezone.now()
             full_name = f"{data['first_name']} {data['last_name']}".strip()
+            user_role_value = _profile_role_value("user")
             with transaction.atomic():
-                profile, _ = Profile.objects.update_or_create(
-                    id=user_id,
-                    defaults={
-                        "full_name": full_name, "phone": data["phone"],
-                        "role": "usuario", "is_active": True,
-                        "preferences": {"medical_profile_pending": True},
-                        "updated_at": now,
-                    },
-                )
-                if not profile.created_at:
-                    profile.created_at = now
-                    profile.save(update_fields=["created_at"])
+                profile = Profile.objects.filter(id=user_id).first() if recovered_existing_auth else None
+                if profile:
+                    # El usuario demostró conocer la contraseña. Se completan sus
+                    # datos, pero nunca se cambia su rol ni se reactiva una cuenta
+                    # bloqueada mediante la pantalla pública de registro.
+                    profile.full_name = full_name
+                    profile.phone = data["phone"]
+                    profile.updated_at = now
+                    profile.save(update_fields=["full_name", "phone", "updated_at"])
+                else:
+                    profile, _ = Profile.objects.update_or_create(
+                        id=user_id,
+                        defaults={
+                            "full_name": full_name, "phone": data["phone"],
+                            "role": user_role_value, "is_active": True,
+                            "preferences": {"medical_profile_pending": True},
+                            "updated_at": now,
+                        },
+                    )
+                    if not profile.created_at:
+                        profile.created_at = now
+                        profile.save(update_fields=["created_at"])
                 if not Patient.objects.filter(Q(owner_id=user_id) | Q(id=user_id)).exists():
                     Patient(
                         id=uuid.uuid4(), owner_id=user_id,
@@ -410,7 +506,19 @@ def register(request):
                         status="active", created_at=now, updated_at=now,
                     ).save(force_insert=True)
         except (SupabaseError, DatabaseError, IntegrityError, TypeError, ValueError) as exc:
-            messages.error(request, str(exc) or "No se pudo completar el registro.")
+            # Supabase Auth no participa en la transacción PostgreSQL de Django.
+            # Si falla la creación del perfil, retiramos la cuenta recién creada
+            # para que el mismo correo pueda registrarse nuevamente sin huérfanos.
+            if created_auth_user_id:
+                try:
+                    delete_auth_user(created_auth_user_id)
+                except SupabaseError:
+                    pass
+            if isinstance(exc, SupabaseError):
+                detail = str(exc) or "No se pudo completar el registro."
+            else:
+                detail = "No se pudo crear el perfil. Verifica los datos e inténtalo nuevamente."
+            messages.error(request, detail)
         else:
             if result.get("access_token"):
                 request.session.cycle_key()
@@ -418,7 +526,7 @@ def register(request):
                 request.session["supabase_email"] = data["email"]
                 request.session["supabase_access_token"] = result.get("access_token", "")
                 request.session["supabase_refresh_token"] = result.get("refresh_token", "")
-                request.session["account_role"] = "usuario"
+                request.session["account_role"] = profile.role or user_role_value
                 messages.success(request, "Cuenta creada. Completa ahora tu ficha médica.")
                 return redirect("patient_medical_record", step=1)
             messages.success(request, "Cuenta creada. Revisa tu correo para confirmarla e iniciar sesión.")
@@ -1346,12 +1454,7 @@ def user_role(request, user_id):
     elif target.id == request.admin_profile.id and role == "user":
         messages.error(request, "No puedes quitarte tu propio rol de administrador.")
     else:
-        # Algunos proyectos antiguos usan valores en español y otros usan
-        # los enum habituales de Supabase: user/admin. Conservamos el estilo
-        # que ya existe en la base para no romper el tipo user_role.
-        current_roles = set(Profile.objects.exclude(role__isnull=True).values_list("role", flat=True))
-        uses_spanish_enum = bool(current_roles & {"usuario", "administrador"})
-        target.role = ("administrador" if role == "admin" else "usuario") if uses_spanish_enum else role
+        target.role = _profile_role_value(role)
         target.updated_at = timezone.now()
         target.save()
         messages.success(request, "Rol actualizado.")

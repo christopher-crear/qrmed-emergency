@@ -24,6 +24,7 @@ Aplicación de dos roles construida con Django 6, PostgreSQL/Supabase, Supabase 
 - Iconos incluidos localmente para que el menú funcione sin depender de un CDN.
 - Configuración lista para Render mediante `render.yaml` y `build.sh`.
 - Login compartido con redirección automática según `profiles.role`.
+- Registro compatible con el enum real de `profiles.role`; detecta automáticamente etiquetas como `user`, `patient` o sus equivalentes existentes y evita perfiles huérfanos en Auth.
 - Panel del paciente con dashboard, credencial QR reversible, tienda, carrito y checkout en tres pasos (envío, pago y confirmación), comprobante real, pantalla de pedido recibido, ficha médica, pedidos, perfil y preferencias.
 - Cada paciente solo consulta su propia ficha y los pedidos vinculados a su UUID de Auth.
 

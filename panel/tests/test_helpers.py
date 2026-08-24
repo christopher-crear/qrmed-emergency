@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
@@ -25,7 +26,11 @@ from panel.services import (
     storage_signed_url, upload_file, versioned_media_url,
 )
 from panel.templatetags.panel_extras import initials, money, payment_method_label, status_label, status_step
-from panel.views import _customer_avatar_url, apply_payment_decision, restore_rejected_order_stock
+from panel.views import (
+    _build_order_lines, _customer_avatar_url, _profile_role_value,
+    _sign_up_or_recover_account, apply_payment_decision,
+    restore_rejected_order_stock,
+)
 
 
 class TemplateFilterTests(SimpleTestCase):
@@ -163,6 +168,17 @@ class ProfileFormTests(SimpleTestCase):
 
 
 class CartAndCheckoutTests(SimpleTestCase):
+    def test_admin_order_detail_builds_every_product_line(self):
+        product_id = uuid.uuid4()
+        product = SimpleNamespace(id=product_id, name="Pulsera")
+        item = SimpleNamespace(
+            product_id=product_id, unit_price=Decimal("7.00"), quantity=2,
+        )
+        lines = _build_order_lines([item], {str(product_id): product})
+        self.assertEqual(len(lines), 1)
+        self.assertIs(lines[0]["product"], product)
+        self.assertEqual(lines[0]["line_total"], Decimal("14.00"))
+
     def test_repeated_product_selections_keep_independent_cart_lines(self):
         product_id = uuid.uuid4()
         first = _cart_line_key(product_id, "Negro", "M")
@@ -265,6 +281,23 @@ class CartAndCheckoutTests(SimpleTestCase):
 
 
 class DemoServiceTests(SimpleTestCase):
+    @patch("panel.views._profile_role_labels", return_value={"admin", "user"})
+    def test_registration_uses_the_real_user_role_enum(self, role_labels):
+        self.assertEqual(_profile_role_value("user"), "user")
+        self.assertEqual(_profile_role_value("admin"), "admin")
+
+    @patch("panel.views.sign_in")
+    @patch("panel.views.sign_up")
+    def test_registration_recovers_an_auth_account_left_without_profile(self, sign_up_mock, sign_in_mock):
+        sign_up_mock.side_effect = SupabaseError("User already registered")
+        sign_in_mock.return_value = {"user": {"id": str(uuid.uuid4())}, "access_token": "token"}
+        result = _sign_up_or_recover_account(
+            "dimo@gmail.com", "Clave-segura-123", "David", "Medina", "0999876787",
+        )
+        self.assertEqual(result["access_token"], "token")
+        self.assertTrue(result["_recovered_existing_auth"])
+        sign_in_mock.assert_called_once_with("dimo@gmail.com", "Clave-segura-123")
+
     @override_settings(DEMO_MODE=False)
     def test_login_page_renders_with_global_context_processor(self):
         response = Client().get("/login/")
