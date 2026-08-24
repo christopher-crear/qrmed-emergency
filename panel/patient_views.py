@@ -815,20 +815,9 @@ def medical_record(request, step):
     form = form_classes[step](request.POST or None, request.FILES or None, instance=request.patient)
     if request.method == "POST" and form.is_valid():
         patient = form.save(commit=False)
-        if step == 1 and request.FILES.get("photo"):
-            try:
-                patient.photo_path = upload_file(
-                    request.FILES["photo"], settings.SUPABASE_PATIENT_BUCKET,
-                    f"{patient.owner_id}/{patient.id}", "photo-",
-                    request.session.get("supabase_access_token", ""),
-                )
-            except SupabaseError as exc:
-                messages.error(request, str(exc))
-                return render(request, "panel/patient_medical_record.html", {"form": form, "step": step})
+        photo = request.FILES.get("photo") if step == 1 else None
         patient.updated_at = timezone.now()
         update_fields = list(form._meta.fields) + ["updated_at"]
-        if step == 1 and request.FILES.get("photo"):
-            update_fields.append("photo_path")
         try:
             if patient._state.adding:
                 patient.created_at = patient.created_at or timezone.now()
@@ -856,6 +845,32 @@ def medical_record(request, step):
             return render(request, "panel/patient_medical_record.html", {
                 "form": form, "step": step,
             })
+        # La fila debe existir antes de construir la URL de su fotografía. Así,
+        # si la subida falla, no se renderiza /foto/ para un paciente inexistente
+        # ni quedan archivos huérfanos cuando PostgreSQL rechaza el formulario.
+        if photo:
+            uploaded_photo_path = ""
+            try:
+                uploaded_photo_path = upload_file(
+                    photo, settings.SUPABASE_PATIENT_BUCKET,
+                    f"{patient.owner_id}/{patient.id}", "photo-",
+                    request.session.get("supabase_access_token", ""),
+                )
+                patient.photo_path = uploaded_photo_path
+                patient.updated_at = timezone.now()
+                patient.save(update_fields=["photo_path", "updated_at"])
+            except SupabaseError as exc:
+                messages.error(request, str(exc))
+                return render(request, "panel/patient_medical_record.html", {
+                    "form": form, "step": step,
+                })
+            except DatabaseError:
+                if uploaded_photo_path:
+                    delete_storage_files(settings.SUPABASE_PATIENT_BUCKET, [uploaded_photo_path])
+                form.add_error(None, "Los datos se guardaron, pero no se pudo asociar la fotografía. Inténtalo nuevamente.")
+                return render(request, "panel/patient_medical_record.html", {
+                    "form": form, "step": step,
+                })
         if step < 3:
             return redirect("patient_medical_record", step=step + 1)
         preferences = request.user_profile.preferences if isinstance(request.user_profile.preferences, dict) else {}
