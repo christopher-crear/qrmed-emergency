@@ -835,13 +835,24 @@ def medical_record(request, step):
                 patient.save(force_insert=True)
             else:
                 patient.save(update_fields=list(dict.fromkeys(update_fields)))
-        except IntegrityError as exc:
-            if "patients_sex_check" not in str(exc):
-                raise
-            form.add_error(
-                "sex" if "sex" in form.fields else None,
-                "Selecciona nuevamente el sexo.",
-            )
+        except DatabaseError as exc:
+            error_text = str(exc).lower()
+            if "patients_sex_check" in error_text:
+                field_name = "sex" if "sex" in form.fields else None
+                message = "Selecciona nuevamente el sexo."
+            elif "patients_id_number_key" in error_text:
+                field_name = "id_number" if "id_number" in form.fields else None
+                message = "Ya existe una ficha médica con este número de identificación."
+            elif "patients_owner_id_key" in error_text:
+                field_name = None
+                message = "Tu cuenta ya tiene una ficha médica. Recarga la página para continuar editándola."
+            elif "not-null constraint" in error_text:
+                field_name = None
+                message = "No se pudo guardar porque falta un dato obligatorio. Revisa los campos e inténtalo nuevamente."
+            else:
+                field_name = None
+                message = "No se pudo guardar la ficha médica. Inténtalo nuevamente en unos segundos."
+            form.add_error(field_name, message)
             return render(request, "panel/patient_medical_record.html", {
                 "form": form, "step": step,
             })
