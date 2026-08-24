@@ -17,14 +17,25 @@
     </header>
 
     <div class="order-modal-v3__body">
+      <section class="order-detail-products">
+        <header><div><small>RESUMEN DEL PEDIDO</small><h2>Productos comprados</h2></div><strong>{{ items|length }} selección{{ items|length|pluralize }}</strong></header>
+        <div>
+          {% for line in line_items %}
+            <article>
+              {% if line.product.image_url %}<img src="{{ line.product.image_url }}" alt="{{ line.product.name }}" loading="lazy" decoding="async">{% else %}<span><i data-lucide="package"></i></span>{% endif %}
+              <div><h3>{{ line.product.name|default:'Producto no disponible' }}</h3><p>{{ line.item.selected_color|default:'Sin color' }} · Talla {{ line.item.selected_size|default:'—' }} · x{{ line.item.quantity }}</p><small>{{ line.item.unit_price|money }} por unidad</small></div>
+              <b>{{ line.line_total|money }}</b>
+            </article>
+          {% empty %}<p class="order-detail-empty">No se encontraron productos asociados a este pedido.</p>{% endfor %}
+        </div>
+      </section>
+
       <div class="order-modal-v3__grid">
-        <div><span>Producto</span><strong>{{ product.name|default:'Producto no disponible' }}{% if items|length > 1 %} +{{ items|length|add:'-1' }}{% endif %}</strong></div>
-        <div><span>Color</span><strong>{{ first_item.selected_color|default:'No definido' }}</strong></div>
-        <div><span>Talla</span><strong>{{ first_item.selected_size|default:'No definida' }}</strong></div>
-        <div><span>Cantidad</span><strong>{{ first_item.quantity|default:'0' }}</strong></div>
-        <div><span>Precio unitario</span><strong>{{ first_item.unit_price|money }}</strong></div>
-        <div><span>Total</span><strong>{{ order.total|money }}</strong></div>
+        <div><span>Subtotal</span><strong>{{ order_subtotal|money }}</strong></div>
         {% if order.discount_amount %}<div><span>Descuento</span><strong>−{{ order.discount_amount|money }}</strong><small>{{ order.discount_code }}</small></div>{% endif %}
+        <div class="order-detail-total"><span>Total pagado</span><strong>{{ order.total|money }}</strong></div>
+        <div><span>Método de pago</span><strong>{{ order.payment_method|payment_method_label }}</strong><small>{{ order.payment_bank_name|default:'Banco no registrado' }}</small></div>
+        <div><span>Dirección de entrega</span><strong>{{ order.shipping_address|default:'No registrada' }}</strong><small>{{ order.shipping_city }}{% if order.shipping_postal %} · CP {{ order.shipping_postal }}{% endif %}</small></div>
         <div><span>Fecha del pedido</span><strong>{{ order.created_at|date:'d/m/Y' }}</strong></div>
         <div><span>Entrega estimada</span><strong>{{ order.estimated_delivery|date:'d/m/Y'|default:'Por definir' }}</strong></div>
         <div><span>Estado</span><strong>{{ order.status|status_label }}</strong></div>
@@ -32,7 +43,7 @@
       </div>
 
       {% if patient_mode %}
-        {% if invoice and invoice.sent_at %}<section class="order-modal-v3__proof"><h2>Factura del pedido</h2><div class="invoice-inline-actions"><button type="button" class="btn btn-muted" data-invoice-preview="{% url 'invoice_pdf' invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar</button><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar factura</a></div></section>{% endif %}
+        {% if invoice and invoice.sent_at %}<section class="order-modal-v3__proof"><h2>Factura del pedido</h2><div class="invoice-inline-actions"><button type="button" class="btn btn-muted" data-invoice-preview="{% url 'invoice_pdf' invoice.id %}?preview=1"><i data-lucide="expand"></i> Ampliar</button><a class="btn btn-primary" href="{% url 'invoice_pdf' invoice.id %}"><i data-lucide="download"></i> Descargar factura</a></div></section>{% else %}<section class="order-modal-v3__proof order-document-pending"><i data-lucide="file-clock"></i><div><h2>Factura pendiente</h2><p>Estará disponible aquí cuando el administrador valide el pago y la envíe a tu buzón.</p></div></section>{% endif %}
         {% if proof_url %}
           <section class="order-modal-v3__proof">
             <h2>Comprobante de pago</h2>

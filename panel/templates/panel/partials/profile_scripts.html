@@ -33,6 +33,13 @@
   document.querySelectorAll('[data-toggle-password]').forEach(button => button.addEventListener('click', () => {
     const input = button.parentElement.querySelector('input');
     input.type = input.type === 'password' ? 'text' : 'password';
+    button.setAttribute('aria-label', input.type === 'password' ? 'Mostrar contraseña' : 'Ocultar contraseña');
   }));
+  const deleteDialog = document.querySelector('[data-account-delete-dialog]');
+  document.querySelector('[data-account-delete-open]')?.addEventListener('click', () => deleteDialog?.showModal());
+  deleteDialog?.querySelectorAll('[data-account-delete-close]').forEach(button => button.addEventListener('click', () => deleteDialog.close()));
+  deleteDialog?.addEventListener('click', event => {
+    if (event.target === deleteDialog) deleteDialog.close();
+  });
 })();
 </script>

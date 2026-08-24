@@ -76,12 +76,23 @@ def _order_rows(orders, include_invoices=False):
     for order in order_list:
         order_items = grouped.get(str(order.id), [])
         first_item = order_items[0] if order_items else None
+        line_items = []
+        for item in order_items:
+            product = product_map.get(str(item.product_id)) if item.product_id else None
+            line_items.append({
+                "item": item,
+                "product": product,
+                "line_total": Decimal(item.unit_price or 0) * int(item.quantity or 0),
+            })
+        calculated_subtotal = sum((line["line_total"] for line in line_items), Decimal("0"))
         rows.append({
             "order": order,
             "items": order_items,
+            "line_items": line_items,
             "first_item": first_item,
             "product": product_map.get(str(first_item.product_id)) if first_item and first_item.product_id else None,
             "invoice": invoice_map.get(str(order.id)),
+            "order_subtotal": Decimal(order.subtotal or 0) or calculated_subtotal,
         })
     return rows
 
@@ -101,10 +112,15 @@ def _cart_data(request):
 
 
 def _cart_line_key(product_id, color, size):
-    return uuid.uuid5(uuid.NAMESPACE_URL, f"qrmed:{product_id}:{color}:{size}").hex
+    """Identificador único de una selección, incluso si repite producto/variante."""
+    return uuid.uuid4().hex
 
 
 class DiscountClaimError(Exception):
+    pass
+
+
+class CheckoutError(Exception):
     pass
 
 
@@ -426,10 +442,9 @@ def cart_add(request, product_id):
     if sizes and size not in sizes:
         size = sizes[0]
     line_key = _cart_line_key(product.id, color, size)
-    existing_quantity = int(cart_data.get(line_key, {}).get("quantity", 0) or 0)
     reserved_other = 0
-    for key, item in cart_data.items():
-        if key == line_key or str(item.get("product_id")) != str(product.id):
+    for item in cart_data.values():
+        if str(item.get("product_id")) != str(product.id):
             continue
         try:
             reserved_other += max(0, int(item.get("quantity", 0) or 0))
@@ -441,7 +456,7 @@ def cart_add(request, product_id):
         return redirect(request.POST.get("next") or "patient_store")
     cart_data[line_key] = {
         "product_id": str(product.id),
-        "quantity": min(available_for_line, existing_quantity + quantity),
+        "quantity": min(available_for_line, quantity),
         "color": color, "size": size,
     }
     request.session["patient_cart"] = cart_data
@@ -473,7 +488,9 @@ def cart(request):
         )}
         context["wallet_tickets"] = [
             {"ticket": ticket, "campaign": campaigns.get(str(ticket.campaign_id))}
-            for ticket in tickets if campaigns.get(str(ticket.campaign_id))
+            for ticket in tickets
+            if campaigns.get(str(ticket.campaign_id))
+            and _campaign_is_open(campaigns[str(ticket.campaign_id)])
         ]
     except DatabaseError:
         context["wallet_tickets"] = []
@@ -483,17 +500,20 @@ def cart(request):
 @patient_required
 @require_POST
 def cart_discount_apply(request):
-    code = str(request.POST.get("discount_code") or "").strip().upper()
-    if not code:
-        messages.error(request, "Escribe un código de descuento.")
+    ticket_id = str(request.POST.get("discount_ticket_id") or "").strip()
+    if not ticket_id:
+        messages.error(request, "Selecciona uno de tus cupones disponibles.")
         return redirect("patient_cart")
     try:
         with transaction.atomic():
-            campaign = DiscountCampaign.objects.select_for_update().filter(code__iexact=code).first()
-            if not campaign:
-                raise DiscountClaimError("El código ingresado no existe.")
-            ticket, created = _claim_campaign(request, campaign)
-            # Aplicar un cupón nunca elimina ni reescribe líneas del carrito.
+            ticket = DiscountTicket.objects.select_for_update().filter(
+                id=ticket_id,
+                user_id=request.user_profile.id,
+                used_at__isnull=True,
+            ).first()
+            campaign = DiscountCampaign.objects.filter(id=ticket.campaign_id).first() if ticket else None
+            if not ticket or not campaign or not _campaign_is_open(campaign):
+                raise DiscountClaimError("El cupón seleccionado ya no está disponible.")
             subtotal = _cart_context(request, persist_cleanup=False)["cart_subtotal"]
             if subtotal < Decimal(campaign.min_order_amount or 0):
                 raise DiscountClaimError(f"Este ticket requiere una compra mínima de ${campaign.min_order_amount}.")
@@ -502,7 +522,7 @@ def cart_discount_apply(request):
     except (DiscountClaimError, DatabaseError, IntegrityError) as exc:
         messages.error(request, str(exc) if str(exc) else "No se pudo aplicar el ticket.")
     else:
-        messages.success(request, "Ticket reclamado y aplicado al carrito." if created else "Descuento aplicado al carrito.")
+        messages.success(request, "Descuento aplicado sin modificar los productos del carrito.")
     return redirect("patient_cart")
 
 
@@ -561,6 +581,28 @@ def discounts(request):
 
 @patient_required
 def checkout(request):
+    checkout_token = str(request.POST.get("checkout_token") or request.session.get("checkout_token") or "").strip()
+    if request.method == "POST":
+        try:
+            checkout_order_id = uuid.UUID(checkout_token)
+        except (TypeError, ValueError, AttributeError):
+            messages.error(request, "La confirmación del pedido venció. Inténtalo nuevamente desde el carrito.")
+            return redirect("patient_cart")
+        existing_order = _patient_orders(request).filter(id=checkout_order_id).first()
+        if existing_order:
+            return redirect("patient_checkout_success", order_id=existing_order.id)
+        if checkout_token != str(request.session.get("checkout_token") or ""):
+            messages.error(request, "La confirmación del pedido venció. Inténtalo nuevamente desde el carrito.")
+            return redirect("patient_cart")
+    else:
+        try:
+            checkout_order_id = uuid.UUID(checkout_token)
+        except (TypeError, ValueError, AttributeError):
+            checkout_order_id = uuid.uuid4()
+            checkout_token = str(checkout_order_id)
+            request.session["checkout_token"] = checkout_token
+            request.session.modified = True
+
     cart_context = _cart_context(request)
     if not cart_context["cart_rows"]:
         messages.info(request, "Agrega al menos un producto antes de finalizar.")
@@ -612,7 +654,7 @@ def checkout(request):
             messages.error(request, "El comprobante debe ser JPG, PNG, WebP o PDF y no superar 10 MB.")
         else:
             now = timezone.now()
-            order_id = uuid.uuid4()
+            order_id = checkout_order_id
             try:
                 proof_path = upload_file(
                     proof, settings.SUPABASE_PAYMENT_BUCKET,
@@ -622,72 +664,92 @@ def checkout(request):
             except SupabaseError as exc:
                 messages.error(request, str(exc))
             else:
-                with transaction.atomic():
-                    discount_ticket = None
-                    discount_campaign = None
-                    discount_amount = Decimal("0")
-                    selected_discount = cart_context.get("selected_discount")
-                    if selected_discount and selected_discount.get("eligible"):
-                        discount_ticket = DiscountTicket.objects.select_for_update().filter(
-                            id=selected_discount["ticket"].id,
-                            user_id=request.user_profile.id,
-                            used_at__isnull=True,
-                        ).first()
-                        if discount_ticket:
-                            discount_campaign = DiscountCampaign.objects.select_for_update().filter(
-                                id=discount_ticket.campaign_id
-                            ).first()
-                        if not discount_ticket or not discount_campaign or not _campaign_is_open(discount_campaign, now):
-                            request.session.pop("discount_ticket_id", None)
-                            request.session.modified = True
-                            messages.error(request, "El ticket dejó de estar disponible. Vuelve al carrito y selecciona otro.")
-                            return redirect("patient_cart")
-                        discount_amount = _discount_amount(discount_campaign, cart_context["cart_subtotal"])
-                    final_total = max(Decimal("0"), cart_context["cart_subtotal"] - discount_amount)
-                    locked_products = {}
-                    for row in cart_context["cart_rows"]:
-                        locked_product = Product.objects.select_for_update().get(id=row["product"].id)
-                        if locked_product.stock < row["quantity"]:
-                            messages.error(
-                                request,
-                                f"El stock de {locked_product.name} cambió. Revisa nuevamente el carrito.",
+                try:
+                    with transaction.atomic():
+                        # El UUID de la pantalla de confirmación también es el PK del
+                        # pedido. Dos clics o reintentos nunca pueden crear dos compras.
+                        existing_order = Order.objects.select_for_update().filter(id=order_id).first()
+                        if existing_order:
+                            order = existing_order
+                        else:
+                            discount_ticket = None
+                            discount_campaign = None
+                            discount_amount = Decimal("0")
+                            selected_discount = cart_context.get("selected_discount")
+                            if selected_discount and selected_discount.get("eligible"):
+                                discount_ticket = DiscountTicket.objects.select_for_update().filter(
+                                    id=selected_discount["ticket"].id,
+                                    user_id=request.user_profile.id,
+                                    used_at__isnull=True,
+                                ).first()
+                                if discount_ticket:
+                                    discount_campaign = DiscountCampaign.objects.select_for_update().filter(
+                                        id=discount_ticket.campaign_id
+                                    ).first()
+                                if not discount_ticket or not discount_campaign or not _campaign_is_open(discount_campaign, now):
+                                    raise CheckoutError("El cupón dejó de estar disponible. Vuelve al carrito y selecciona otro.")
+                                discount_amount = _discount_amount(discount_campaign, cart_context["cart_subtotal"])
+                            final_total = max(Decimal("0"), cart_context["cart_subtotal"] - discount_amount)
+                            requested_by_product = {}
+                            for row in cart_context["cart_rows"]:
+                                product_id = str(row["product"].id)
+                                requested_by_product[product_id] = requested_by_product.get(product_id, 0) + row["quantity"]
+                            locked_products = {}
+                            for product_id, requested in requested_by_product.items():
+                                locked_product = Product.objects.select_for_update().get(id=product_id)
+                                if locked_product.stock < requested:
+                                    raise CheckoutError(
+                                        f"El stock de {locked_product.name} cambió. Revisa nuevamente el carrito."
+                                    )
+                                locked_products[product_id] = locked_product
+                            order = Order(
+                                id=order_id,
+                                user_id=request.user_profile.id,
+                                order_number=f"ORD-{now:%Y%m%d}-{uuid.uuid4().hex[:6].upper()}",
+                                total=final_total, subtotal=cart_context["cart_subtotal"],
+                                discount_amount=discount_amount,
+                                discount_code=discount_campaign.code if discount_campaign else None,
+                                status="pending", payment_method=method,
+                                payment_bank_id=selected_bank.id if selected_bank else None,
+                                payment_bank_name=selected_bank.bank_name if selected_bank else getattr(payment, "bank_name", None),
+                                payment_proof_path=proof_path,
+                                shipping_address=shipping["address"], shipping_name=shipping["name"],
+                                shipping_city=shipping["city"], shipping_postal=shipping["postal"],
+                                shipping_phone=shipping["phone"], tracking_number=_delivery_code(),
+                                created_at=now, updated_at=now,
                             )
-                            return redirect("patient_cart")
-                        locked_products[str(locked_product.id)] = locked_product
-                    order = Order(
-                        id=order_id,
-                        user_id=request.user_profile.id,
-                        order_number=f"ORD-{now:%Y%m%d}-{uuid.uuid4().hex[:6].upper()}",
-                        total=final_total, subtotal=cart_context["cart_subtotal"],
-                        discount_amount=discount_amount,
-                        discount_code=discount_campaign.code if discount_campaign else None,
-                        status="pending", payment_method=method,
-                        payment_bank_id=selected_bank.id if selected_bank else None,
-                        payment_bank_name=selected_bank.bank_name if selected_bank else getattr(payment, "bank_name", None),
-                        payment_proof_path=proof_path,
-                        shipping_address=shipping["address"], shipping_name=shipping["name"],
-                        shipping_city=shipping["city"], shipping_postal=shipping["postal"],
-                        shipping_phone=shipping["phone"], tracking_number=_delivery_code(),
-                        created_at=now, updated_at=now,
-                    )
-                    order.save(force_insert=True)
-                    for row in cart_context["cart_rows"]:
-                        locked_product = locked_products[str(row["product"].id)]
-                        OrderItem(
-                            id=uuid.uuid4(), order_id=order.id, product_id=row["product"].id,
-                            quantity=row["quantity"], unit_price=row["product"].price,
-                            selected_color=row["color"], selected_size=row["size"],
-                        ).save(force_insert=True)
-                        locked_product.stock -= row["quantity"]
-                        locked_product.updated_at = now
-                        locked_product.save(update_fields=["stock", "updated_at"])
-                    if discount_ticket:
-                        # El pedido conserva el código y el descuento. El ticket se
-                        # elimina únicamente después de completar la compra.
-                        discount_ticket.delete()
-                        cache.delete(f"qrmed-ticket-count:{request.user_profile.id}")
+                            order.save(force_insert=True)
+                            for row in cart_context["cart_rows"]:
+                                OrderItem(
+                                    id=uuid.uuid4(), order_id=order.id, product_id=row["product"].id,
+                                    quantity=row["quantity"], unit_price=row["product"].price,
+                                    selected_color=row["color"], selected_size=row["size"],
+                                ).save(force_insert=True)
+                            for product_id, requested in requested_by_product.items():
+                                locked_product = locked_products[product_id]
+                                locked_product.stock -= requested
+                                locked_product.updated_at = now
+                                locked_product.save(update_fields=["stock", "updated_at"])
+                            if discount_ticket:
+                                discount_ticket.delete()
+                                cache.delete(f"qrmed-ticket-count:{request.user_profile.id}")
+                except CheckoutError as exc:
+                    delete_storage_files(settings.SUPABASE_PAYMENT_BUCKET, [proof_path])
+                    request.session.pop("discount_ticket_id", None)
+                    request.session.modified = True
+                    messages.error(request, str(exc))
+                    return redirect("patient_cart")
+                except (IntegrityError, DatabaseError) as exc:
+                    existing_order = _patient_orders(request).filter(id=order_id).first()
+                    if existing_order:
+                        delete_storage_files(settings.SUPABASE_PAYMENT_BUCKET, [proof_path])
+                        return redirect("patient_checkout_success", order_id=existing_order.id)
+                    delete_storage_files(settings.SUPABASE_PAYMENT_BUCKET, [proof_path])
+                    messages.error(request, "No se pudo registrar el pedido. No se realizó ningún cobro ni se duplicó la compra.")
+                    return redirect("patient_checkout")
                 request.session["patient_cart"] = {}
                 request.session.pop("discount_ticket_id", None)
+                request.session.pop("checkout_token", None)
                 request.session.modified = True
                 for admin_id in Profile.objects.filter(role__in=["admin", "administrador"]).values_list("id", flat=True):
                     cache.delete(f"qrmed-notifications:{admin_id}")
@@ -701,6 +763,7 @@ def checkout(request):
         "selected_bank_id": selected_bank_id,
         "shipping": shipping,
         "selected_payment_method": selected_method,
+        "checkout_token": checkout_token,
     })
     return render(request, "panel/patient_checkout.html", context)
 

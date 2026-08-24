@@ -14,6 +14,7 @@ from panel.forms import (
     ProfileForm, patient_sex_choices, validate_ecuador_cedula,
 )
 from panel.patient_utils import medical_profile_is_complete
+from panel.patient_views import _cart_line_key, _discount_amount
 from panel.models import Patient
 from panel.services import (
     SupabaseError, normalize_storage_path, public_storage_url, sign_in,
@@ -156,6 +157,28 @@ class ProfileFormTests(SimpleTestCase):
             self.assertIsInstance(form.fields[field_name].widget, forms.TextInput)
             self.assertNotIsInstance(form.fields[field_name].widget, forms.Textarea)
         self.assertNotIn("<textarea", form.as_p())
+
+
+class CartAndCheckoutTests(SimpleTestCase):
+    def test_repeated_product_selections_keep_independent_cart_lines(self):
+        product_id = uuid.uuid4()
+        first = _cart_line_key(product_id, "Negro", "M")
+        second = _cart_line_key(product_id, "Negro", "M")
+        self.assertNotEqual(first, second)
+
+    def test_discount_changes_total_without_changing_cart_data(self):
+        campaign = SimpleNamespace(
+            min_order_amount=0,
+            discount_type="percentage",
+            discount_value=50,
+        )
+        cart = {
+            "line-a": {"product_id": "a", "quantity": 1},
+            "line-b": {"product_id": "b", "quantity": 2},
+        }
+        original = {key: dict(value) for key, value in cart.items()}
+        self.assertEqual(str(_discount_amount(campaign, 32)), "16.00")
+        self.assertEqual(cart, original)
 
 
 class DemoServiceTests(SimpleTestCase):

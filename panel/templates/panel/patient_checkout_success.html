@@ -10,11 +10,12 @@
   <div class="success-warning"><i data-lucide="info"></i><span><b>Pago pendiente de validación</b>El administrador revisará tu comprobante y aprobará el pedido. Cuando sea confirmado, tu pulsera pasará automáticamente a producción.</span></div>
   <article class="patient-card success-details">
     <h2>Detalles del pedido</h2>
+    <div class="success-product-list">
+      {% for line in line_items %}<div>{% if line.product.image_url %}<img src="{{ line.product.image_url }}" alt="{{ line.product.name }}" loading="lazy" decoding="async">{% else %}<span><i data-lucide="package"></i></span>{% endif %}<p><strong>{{ line.product.name|default:'Producto' }}</strong><small>{{ line.item.selected_color|default:'Sin color' }} · Talla {{ line.item.selected_size|default:'—' }} · x{{ line.item.quantity }}</small></p><b>{{ line.line_total|money }}</b></div>{% endfor %}
+    </div>
     <dl>
-      <div><dt>Producto</dt><dd>{{ product.name|default:'Producto' }}{% if items|length > 1 %} +{{ items|length|add:'-1' }} más{% endif %}</dd></div>
-      <div><dt>Color</dt><dd>{{ first_item.selected_color|default:'—' }}</dd></div>
-      <div><dt>Talla</dt><dd>{{ first_item.selected_size|default:'—' }}</dd></div>
       <div><dt>Estado del pago</dt><dd>Pendiente de validación</dd></div>
+      <div><dt>Subtotal</dt><dd>{{ order_subtotal|money }}</dd></div>
       {% if order.discount_amount %}<div><dt>Ticket aplicado</dt><dd>{{ order.discount_code }} · −{{ order.discount_amount|money }}</dd></div>{% endif %}
       <div><dt>Total</dt><dd>{{ order.total|money }}</dd></div>
       <div><dt>Entrega estimada</dt><dd>5–8 días tras confirmar pago</dd></div>

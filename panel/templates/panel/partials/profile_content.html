@@ -71,11 +71,26 @@
         <div><span>Pedidos realizados</span><strong>{{ profile_metric_orders }}</strong></div>
         <div><span>Miembro desde</span><strong>{{ profile_member_since|date:'M Y'|default:'—' }}</strong></div>
       </article>
-      <article class="profile-modern-card danger-modern-card">
-        <span class="profile-card-icon red"><i data-lucide="triangle-alert"></i></span>
-        <h2>Zona de peligro</h2><p>{{ profile_danger_text }}</p>
-        {% if profile_delete_action %}<form method="post" action="{{ profile_delete_action }}">{% csrf_token %}<label>Contraseña actual<span class="password-delete-field"><input type="password" name="current_password" required autocomplete="current-password" placeholder="Confirma tu contraseña"><button type="button" data-toggle-password aria-label="Mostrar contraseña"><i data-lucide="eye"></i></button></span></label><button type="submit" data-confirm="Se eliminarán permanentemente tu cuenta, ficha médica, pedidos y facturas." data-confirm-title="¿Eliminar tu cuenta?"><i data-lucide="trash-2"></i>Eliminar mi cuenta</button></form>{% else %}<button type="button" disabled><i data-lucide="trash-2"></i>Eliminar cuenta</button>{% endif %}
-      </article>
+      {% if profile_delete_action %}<button type="button" class="profile-delete-link" data-account-delete-open><i data-lucide="trash-2"></i>Eliminar mi cuenta</button>{% endif %}
     </aside>
   </div>
+
+  {% if profile_delete_action %}
+  <dialog class="account-delete-dialog" data-account-delete-dialog>
+    <form method="post" action="{{ profile_delete_action }}">
+      {% csrf_token %}
+      <button class="account-delete-close" type="button" data-account-delete-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      <span><i data-lucide="triangle-alert"></i></span>
+      <h2>¿Eliminar tu cuenta?</h2>
+      <p>{{ profile_danger_text }} Esta acción no se puede deshacer.</p>
+      <label>Contraseña actual</label>
+      <div class="account-delete-password">
+        <i data-lucide="lock"></i>
+        <input type="password" name="current_password" required autocomplete="current-password" placeholder="Escribe tu contraseña">
+        <button type="button" data-toggle-password aria-label="Mostrar contraseña"><i data-lucide="eye"></i></button>
+      </div>
+      <div class="account-delete-actions"><button type="button" data-account-delete-close>Cancelar</button><button type="submit"><i data-lucide="trash-2"></i>Eliminar definitivamente</button></div>
+    </form>
+  </dialog>
+  {% endif %}
 </section>

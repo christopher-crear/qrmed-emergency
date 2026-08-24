@@ -11,6 +11,9 @@ Aplicación de dos roles construida con Django 6, PostgreSQL/Supabase, Supabase 
 - Pagos: métricas, búsqueda automática, filtros, comprobantes privados, aprobación/rechazo y exportación CSV.
 - Productos: catálogo rediseñado, búsqueda automática e imágenes tomadas exclusivamente de `products.image_url`.
 - Pedidos: seguimiento visual, detalle, estado, entrega y rastreo.
+- Carrito: permite selecciones repetidas e independientes, conserva todas las líneas al aplicar descuentos y muestra los cupones disponibles en un desplegable.
+- Pago idempotente: cada confirmación genera como máximo un pedido, incluso ante doble clic, reintento del navegador o respuesta lenta del servidor.
+- Detalle de compra: lista completa de productos, variantes, cantidades, subtotal, descuento, total, código de entrega, comprobante y factura.
 - Usuarios: panel de métricas, búsqueda automática, fotografías reales, roles y bloqueo mediante `profiles.role` y `profiles.is_active`.
 - Perfil: portada y avatar privados, edición integrada, actividad y cambio de contraseña validando primero la contraseña actual.
 - Configuración: idioma, tema, notificaciones y privacidad.

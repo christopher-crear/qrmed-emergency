@@ -15,6 +15,7 @@
 
   <form method="post" enctype="multipart/form-data" class="checkout-layout" id="checkoutForm">
     {% csrf_token %}
+    <input type="hidden" name="checkout_token" value="{{ checkout_token }}">
     <div class="checkout-panels">
       <section class="patient-card checkout-panel" data-checkout-panel="1">
         <h2><i data-lucide="map-pin"></i> Dirección de envío</h2>
@@ -88,7 +89,7 @@
         <article><h3>Comprobante adjunto</h3><p class="review-proof"><i data-lucide="circle-check"></i><span><strong data-review-proof>Selecciona un archivo</strong><small>Se enviará para validación</small></span><em>Pendiente de validación</em></p></article>
         {% if selected_discount and selected_discount.eligible %}<article class="checkout-discount-review"><h3>Ticket aplicado</h3><p><i data-lucide="ticket-check"></i><strong>{{ selected_discount.campaign.code }}</strong><span>Ahorras {{ discount_amount|money }}</span></p></article>{% endif %}
         <div class="checkout-warning"><i data-lucide="info"></i><span>Tu pedido quedará con estado</span><strong>Pago pendiente de validación</strong></div>
-        <div class="checkout-buttons"><button class="btn" type="button" data-next-step="2"><i data-lucide="arrow-left"></i> Atrás</button><button class="btn btn-primary" type="submit"><i data-lucide="check"></i> Enviar pedido</button></div>
+        <div class="checkout-buttons"><button class="btn" type="button" data-next-step="2"><i data-lucide="arrow-left"></i> Atrás</button><button class="btn btn-primary" type="submit" data-submit-order><i data-lucide="check"></i><span>Enviar pedido</span></button></div>
       </section>
     </div>
 
@@ -143,13 +144,26 @@
   };
   flow.querySelectorAll('[data-next-step]').forEach(button => button.addEventListener('click', () => {
     const target = Number(button.dataset.nextStep);
-    if (target === 2 && ![form.elements.shipping_name, form.elements.shipping_address, form.elements.shipping_city, form.elements.shipping_phone].every(input => input.reportValidity())) return;
+    if (target === 2 && ![form.elements.shipping_name, form.elements.shipping_address, form.elements.shipping_city, form.elements.shipping_postal, form.elements.shipping_phone].every(input => input.reportValidity())) return;
+    if (target === 3 && bankInputs.length && !bankInputs.some(input => input.checked)) {
+      bankInputs[0].reportValidity();
+      return;
+    }
     if (target === 3 && !proof.reportValidity()) return;
     showStep(target);
   }));
   methodInputs.forEach(input => input.addEventListener('change', updateMethod));
   bankInputs.forEach(input => input.addEventListener('change', updateBank));
   proof.addEventListener('change', () => flow.querySelector('[data-proof-name]').textContent = proof.files[0]?.name || 'Ningún archivo seleccionado');
+  form.addEventListener('submit', event => {
+    const submit = form.querySelector('[data-submit-order]');
+    if (submit.disabled) {
+      event.preventDefault();
+      return;
+    }
+    submit.disabled = true;
+    submit.querySelector('span').textContent = 'Procesando pedido…';
+  });
   updateMethod();
   updateBank();
 })();

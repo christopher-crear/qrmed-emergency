@@ -17,8 +17,19 @@
 
     <aside class="patient-card cart-summary cart-summary-v2">
       <header><span><i data-lucide="receipt-text"></i></span><div><h2>Resumen</h2><p>{{ cart_count }} producto{{ cart_count|pluralize }}</p></div></header>
-      <form class="discount-code-box" method="post" action="{% url 'patient_cart_discount_apply' %}">{% csrf_token %}<label for="discountCode">Código de descuento</label><div><i data-lucide="ticket-percent"></i><input id="discountCode" name="discount_code" placeholder="Ej. QRMED-ABC123" autocomplete="off"><button>Aplicar</button></div></form>
-      {% if wallet_tickets %}<div class="cart-wallet-tickets"><span>O usa uno de tus tickets:</span>{% for row in wallet_tickets %}<form method="post" action="{% url 'patient_cart_discount_apply' %}">{% csrf_token %}<input type="hidden" name="discount_code" value="{{ row.campaign.code }}"><button class="{% if selected_discount and selected_discount.campaign.id == row.campaign.id %}active{% endif %}"><i data-lucide="ticket"></i>{{ row.campaign.code }} · {% if row.campaign.discount_type == 'percentage' %}{{ row.campaign.discount_value|floatformat:'-2' }}%{% else %}{{ row.campaign.discount_value|money }}{% endif %}</button></form>{% endfor %}</div>{% endif %}
+      <form class="cart-coupon-select" method="post" action="{% url 'patient_cart_discount_apply' %}">
+        {% csrf_token %}
+        <label for="discountTicket">Cupón de descuento</label>
+        <div>
+          <i data-lucide="ticket-percent"></i>
+          <select id="discountTicket" name="discount_ticket_id" {% if not wallet_tickets %}disabled{% endif %} required>
+            <option value="">{% if wallet_tickets %}Selecciona uno de tus cupones{% else %}No tienes cupones disponibles{% endif %}</option>
+            {% for row in wallet_tickets %}<option value="{{ row.ticket.id }}" {% if selected_discount and selected_discount.ticket.id == row.ticket.id %}selected{% endif %}>{{ row.campaign.code }} · {% if row.campaign.discount_type == 'percentage' %}{{ row.campaign.discount_value|floatformat:'-2' }}%{% else %}{{ row.campaign.discount_value|money }}{% endif %}</option>{% endfor %}
+          </select>
+          <button {% if not wallet_tickets %}disabled{% endif %}>Aplicar</button>
+        </div>
+        <small>El cupón solo cambia el cálculo; tus productos permanecen en el carrito.</small>
+      </form>
       {% if selected_discount %}<div class="applied-discount {% if not selected_discount.eligible %}is-warning{% endif %}"><i data-lucide="{% if selected_discount.eligible %}badge-check{% else %}triangle-alert{% endif %}"></i><div><strong>{{ selected_discount.campaign.code }}</strong><small>{% if selected_discount.eligible %}Descuento aplicado: -{{ discount_amount|money }}{% else %}Compra mínima: {{ selected_discount.campaign.min_order_amount|money }}{% endif %}</small></div><form method="post" action="{% url 'patient_cart_discount_remove' %}">{% csrf_token %}<button title="Quitar descuento"><i data-lucide="x"></i></button></form></div>{% endif %}
       <dl><div><dt>Productos</dt><dd>{{ cart_count }}</dd></div><div><dt>Subtotal</dt><dd>{{ cart_subtotal|money }}</dd></div>{% if discount_amount %}<div class="discount-line"><dt>Descuento</dt><dd>−{{ discount_amount|money }}</dd></div>{% endif %}<div><dt>Envío</dt><dd class="green-text">Gratis</dd></div><div class="total"><dt>Total</dt><dd>{{ cart_total|money }}</dd></div></dl>
       <a class="btn btn-primary cart-checkout-v2" href="{% url 'patient_checkout' %}">Finalizar pedido <i data-lucide="arrow-right"></i></a>
