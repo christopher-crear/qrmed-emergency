@@ -38,20 +38,34 @@
     <section class="discount-campaign-list">
       <header><div><h2>Campañas creadas</h2><p>Controla disponibilidad, uso y cantidad restante.</p></div></header>
       {% for campaign in campaigns %}
-        <article class="discount-ticket-admin {% if not campaign.is_active %}is-paused{% endif %}">
-          <div class="discount-ticket-admin__cut"></div>
-          <div class="discount-ticket-admin__main">
-            <span class="discount-ticket-state {% if campaign.is_available_now %}available{% endif %}">{% if campaign.is_available_now %}Disponible{% elif campaign.is_active %}Agotado o fuera de fecha{% else %}Pausado{% endif %}</span>
-            <small>{{ campaign.code }}</small><h3>{{ campaign.title }}</h3><strong>{% if campaign.discount_type == 'percentage' %}{{ campaign.discount_value|floatformat:'-2' }}%{% else %}{{ campaign.discount_value|money }}{% endif %} OFF</strong>
+        <article class="campaign-ticket-v4 ticket-tone-{% cycle 'violet' 'blue' %} {% if not campaign.is_active %}is-paused{% endif %}">
+          <div class="campaign-ticket-v4__body">
+            <div class="campaign-ticket-v4__topline">
+              <span class="campaign-ticket-v4__state {% if campaign.is_available_now %}is-available{% endif %}">{% if campaign.is_available_now %}Disponible{% elif campaign.is_active %}Agotado o fuera de fecha{% else %}Pausado{% endif %}</span>
+              <span class="campaign-ticket-v4__brand">QRMED TICKET</span>
+            </div>
+            <small class="campaign-ticket-v4__label">CAMPAÑA</small>
+            <h3>{{ campaign.title }}</h3>
             <p>{{ campaign.description|default:'Ticket promocional QRMed.' }}</p>
+            <div class="campaign-ticket-v4__footer">
+              <div class="campaign-ticket-v4__discount"><small>DESCUENTO</small><strong>{% if campaign.discount_type == 'percentage' %}{{ campaign.discount_value|floatformat:'-2' }}%{% else %}{{ campaign.discount_value|money }}{% endif %} OFF</strong></div>
+              <div class="campaign-ticket-v4__barcode" aria-hidden="true"></div>
+              <dl>
+                <div><dt>Compra mínima</dt><dd>{{ campaign.min_order_amount|money }}</dd></div>
+                <div><dt>Disponible</dt><dd>{% if campaign.starts_at %}{{ campaign.starts_at|date:'d/m/Y' }}{% else %}Inmediato{% endif %}</dd></div>
+                <div><dt>Vence</dt><dd>{% if campaign.expires_at %}{{ campaign.expires_at|date:'d/m/Y' }}{% else %}Sin límite{% endif %}</dd></div>
+              </dl>
+            </div>
           </div>
-          <div class="discount-ticket-admin__side">
-            <div><span>Reclamados</span><strong>{{ campaign.claimed_count }} / {{ campaign.max_claims }}</strong></div>
-            <div><span>Usados</span><strong>{{ campaign.used_count }}</strong></div>
-            <div><span>Restantes</span><strong>{{ campaign.remaining_count }}</strong></div>
-            <small>{% if campaign.expires_at %}Vence {{ campaign.expires_at|date:'d/m/Y H:i' }}{% else %}Sin vencimiento{% endif %}</small>
-            <div class="discount-ticket-actions"><a href="?edit={{ campaign.id }}#discountForm" title="Editar"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'discount_toggle' campaign.id %}">{% csrf_token %}<button title="{% if campaign.is_active %}Pausar{% else %}Activar{% endif %}"><i data-lucide="{% if campaign.is_active %}pause{% else %}play{% endif %}"></i></button></form></div>
-          </div>
+          <aside class="campaign-ticket-v4__stub">
+            <div class="campaign-ticket-v4__stub-code"><i data-lucide="qr-code"></i><span>{{ campaign.code }}</span></div>
+            <div class="campaign-ticket-v4__counts">
+              <div><span>Reclamados</span><strong>{{ campaign.claimed_count }}/{{ campaign.max_claims }}</strong></div>
+              <div><span>Usados</span><strong>{{ campaign.used_count }}</strong></div>
+              <div><span>Restantes</span><strong>{{ campaign.remaining_count }}</strong></div>
+            </div>
+            <div class="campaign-ticket-v4__actions"><a href="?edit={{ campaign.id }}#discountForm" title="Editar campaña" aria-label="Editar campaña"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'discount_toggle' campaign.id %}">{% csrf_token %}<button title="{% if campaign.is_active %}Pausar campaña{% else %}Activar campaña{% endif %}" aria-label="{% if campaign.is_active %}Pausar campaña{% else %}Activar campaña{% endif %}"><i data-lucide="{% if campaign.is_active %}pause{% else %}play{% endif %}"></i></button></form></div>
+          </aside>
         </article>
       {% empty %}<div class="discount-empty"><i data-lucide="ticket-x"></i><h3>No existen campañas</h3><p>Crea la primera desde el formulario.</p></div>{% endfor %}
       {% include 'panel/partials/pagination.html' %}
