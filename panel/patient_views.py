@@ -118,14 +118,13 @@ def _cart_line_key(product_id, color, size):
 
 
 def _persist_cart_removal(request, line_key):
-    """Elimina una línea y fuerza su persistencia en cached_db."""
+    """Elimina una línea dejando que SessionMiddleware guarde una sola versión."""
     cart_data = dict(_cart_data(request))
     removed = cart_data.pop(str(line_key), None)
     request.session.pop("patient_cart", None)
     request.session["patient_cart"] = dict(cart_data)
     request.session.pop("checkout_token", None)
     request.session.modified = True
-    request.session.save()
     return removed
 
 
@@ -135,6 +134,33 @@ class DiscountClaimError(Exception):
 
 class CheckoutError(Exception):
     pass
+
+
+def _reserve_cart_stock(cart_rows, *, now=None):
+    """Descuenta el inventario bajo bloqueo; la transacción externa decide el commit."""
+    now = now or timezone.now()
+    requested_by_product = {}
+    for row in cart_rows:
+        product_id = str(row["product"].id)
+        requested_by_product[product_id] = requested_by_product.get(product_id, 0) + int(row["quantity"])
+
+    locked_products = {}
+    for product_id, requested in requested_by_product.items():
+        try:
+            product = Product.objects.select_for_update().get(id=product_id)
+        except Product.DoesNotExist as exc:
+            raise CheckoutError("Uno de los productos ya no está disponible.") from exc
+        if not product.is_active or product.stock < requested:
+            raise CheckoutError(f"El stock de {product.name} cambió. Revisa nuevamente el carrito.")
+        locked_products[product_id] = product
+
+    # Primero se validan todos los productos y solo después se modifica alguno.
+    for product_id, requested in requested_by_product.items():
+        product = locked_products[product_id]
+        product.stock -= requested
+        product.updated_at = now
+        product.save(update_fields=["stock", "updated_at"])
+    return requested_by_product
 
 
 def _campaign_is_open(campaign, now=None):
@@ -481,8 +507,8 @@ def cart_add(request, product_id):
 @patient_required
 @require_POST
 def cart_remove(request, line_key):
-    # Crea un diccionario nuevo y lo guarda inmediatamente. Esto evita que el
-    # backend cached_db conserve una copia anterior de la sesión en Render.
+    # Crea un diccionario nuevo para que Django detecte siempre la modificación
+    # de la sesión y descarte también cualquier token de checkout anterior.
     removed = _persist_cart_removal(request, line_key)
     if removed is None:
         messages.error(request, "Ese producto ya no estaba en el carrito. Se actualizó la lista.")
@@ -706,18 +732,7 @@ def checkout(request):
                                     raise CheckoutError("El cupón dejó de estar disponible. Vuelve al carrito y selecciona otro.")
                                 discount_amount = _discount_amount(discount_campaign, cart_context["cart_subtotal"])
                             final_total = max(Decimal("0"), cart_context["cart_subtotal"] - discount_amount)
-                            requested_by_product = {}
-                            for row in cart_context["cart_rows"]:
-                                product_id = str(row["product"].id)
-                                requested_by_product[product_id] = requested_by_product.get(product_id, 0) + row["quantity"]
-                            locked_products = {}
-                            for product_id, requested in requested_by_product.items():
-                                locked_product = Product.objects.select_for_update().get(id=product_id)
-                                if locked_product.stock < requested:
-                                    raise CheckoutError(
-                                        f"El stock de {locked_product.name} cambió. Revisa nuevamente el carrito."
-                                    )
-                                locked_products[product_id] = locked_product
+                            _reserve_cart_stock(cart_context["cart_rows"], now=now)
                             order = Order(
                                 id=order_id,
                                 user_id=request.user_profile.id,
@@ -741,11 +756,6 @@ def checkout(request):
                                     quantity=row["quantity"], unit_price=row["product"].price,
                                     selected_color=row["color"], selected_size=row["size"],
                                 ).save(force_insert=True)
-                            for product_id, requested in requested_by_product.items():
-                                locked_product = locked_products[product_id]
-                                locked_product.stock -= requested
-                                locked_product.updated_at = now
-                                locked_product.save(update_fields=["stock", "updated_at"])
                             if discount_ticket:
                                 discount_ticket.delete()
                                 cache.delete(f"qrmed-ticket-count:{request.user_profile.id}")

@@ -13,6 +13,7 @@ Aplicación de dos roles construida con Django 6, PostgreSQL/Supabase, Supabase 
 - Pedidos: seguimiento visual, detalle, estado, entrega y rastreo.
 - Carrito: permite selecciones repetidas e independientes, conserva todas las líneas al aplicar descuentos y muestra los cupones disponibles en un desplegable.
 - Pago idempotente: cada confirmación genera como máximo un pedido, incluso ante doble clic, reintento del navegador o respuesta lenta del servidor.
+- Inventario seguro: el checkout reserva y descuenta el stock dentro de la misma transacción del pedido; si el pago es rechazado, las unidades vuelven al inventario una sola vez.
 - Detalle de compra: lista completa de productos, variantes, cantidades, subtotal, descuento, total, código de entrega, comprobante y factura.
 - Flujo de pago y entrega: un pago aprobado pasa a producción con fecha estimada a siete días; un rechazo cancela el pedido y notifica el motivo al cliente.
 - Entrega segura: el código permanece visible para administración/motorizado y el cliente lo ingresa desde “Mis pedidos” para marcar la manilla como entregada.
@@ -95,7 +96,8 @@ El proyecto está preparado para planes pequeños de Supabase y Render:
 
 - usa el Transaction pooler (`6543`) con `DATABASE_CONN_MAX_AGE=0` para no agotar las conexiones;
 - reutiliza en cada request el perfil y paciente que ya validó el decorador, evitando consultas duplicadas;
-- guarda sesiones en `cached_db` y limita la caché local a 1000 entradas;
+- guarda carrito, cupón y token de checkout en sesiones de PostgreSQL, evitando copias distintas entre los dos workers de Render;
+- limita la caché local a 1000 entradas únicamente para datos regenerables como notificaciones, QR y URLs firmadas;
 - conserva temporalmente URLs firmadas, imágenes privadas y códigos QR;
 - el navegador mantiene las redirecciones de imágenes durante 15 minutos;
 - el panel del paciente calcula los estados de pedidos en una sola agregación y no consulta productos solo para contar el carrito;

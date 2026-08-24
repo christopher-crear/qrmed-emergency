@@ -14,7 +14,10 @@ from panel.forms import (
     ProfileForm, patient_sex_choices, validate_ecuador_cedula,
 )
 from panel.patient_utils import medical_profile_is_complete
-from panel.patient_views import _cart_line_key, _discount_amount, _persist_cart_removal
+from panel.patient_views import (
+    CheckoutError, _cart_line_key, _discount_amount, _persist_cart_removal,
+    _reserve_cart_stock,
+)
 from panel.models import Patient
 from panel.services import (
     SupabaseError, normalize_storage_path, public_storage_url, sign_in,
@@ -22,7 +25,7 @@ from panel.services import (
     storage_signed_url, upload_file, versioned_media_url,
 )
 from panel.templatetags.panel_extras import initials, money, payment_method_label, status_label, status_step
-from panel.views import _customer_avatar_url, apply_payment_decision
+from panel.views import _customer_avatar_url, apply_payment_decision, restore_rejected_order_stock
 
 
 class TemplateFilterTests(SimpleTestCase):
@@ -184,9 +187,6 @@ class CartAndCheckoutTests(SimpleTestCase):
         class FakeSession(dict):
             modified = False
 
-            def save(self):
-                self.saved = True
-
         session = FakeSession({
             "patient_cart": {
                 "keep": {"product_id": "a", "quantity": 1},
@@ -200,7 +200,39 @@ class CartAndCheckoutTests(SimpleTestCase):
         self.assertEqual(list(session["patient_cart"]), ["keep"])
         self.assertNotIn("checkout_token", session)
         self.assertTrue(session.modified)
-        self.assertTrue(session.saved)
+
+    def test_render_uses_one_authoritative_database_session(self):
+        from django.conf import settings
+        self.assertEqual(settings.SESSION_ENGINE, "django.contrib.sessions.backends.db")
+
+    @patch("panel.patient_views.Product.objects.select_for_update")
+    def test_checkout_reserves_stock_once_for_repeated_product_lines(self, select_for_update):
+        product_id = uuid.uuid4()
+        product = SimpleNamespace(
+            id=product_id, name="Manilla", stock=5, is_active=True,
+            updated_at=None, save=Mock(),
+        )
+        select_for_update.return_value.get.return_value = product
+        rows = [
+            {"product": product, "quantity": 1},
+            {"product": product, "quantity": 2},
+        ]
+        reserved = _reserve_cart_stock(rows)
+        self.assertEqual(reserved[str(product_id)], 3)
+        self.assertEqual(product.stock, 2)
+        product.save.assert_called_once_with(update_fields=["stock", "updated_at"])
+
+    @patch("panel.patient_views.Product.objects.select_for_update")
+    def test_checkout_never_allows_negative_stock(self, select_for_update):
+        product = SimpleNamespace(
+            id=uuid.uuid4(), name="Pulsera", stock=1, is_active=True,
+            updated_at=None, save=Mock(),
+        )
+        select_for_update.return_value.get.return_value = product
+        with self.assertRaises(CheckoutError):
+            _reserve_cart_stock([{"product": product, "quantity": 2}])
+        self.assertEqual(product.stock, 1)
+        product.save.assert_not_called()
 
     def test_payment_approval_sets_production_and_seven_day_delivery(self):
         now = datetime(2026, 8, 24, 15, 0, tzinfo=timezone.utc)
@@ -215,6 +247,21 @@ class CartAndCheckoutTests(SimpleTestCase):
         apply_payment_decision(order, "reject", uuid.uuid4())
         self.assertEqual(order.status, "cancelled")
         self.assertEqual(order.payment_rejection_reason, "Imagen ilegible")
+
+    @patch("panel.views.Product.objects.select_for_update")
+    @patch("panel.views.OrderItem.objects.filter")
+    def test_rejected_payment_restores_reserved_stock(self, order_items_filter, select_for_update):
+        product_id = uuid.uuid4()
+        grouped = MagicMock()
+        order_items_filter.return_value = grouped
+        grouped.exclude.return_value.values.return_value.annotate.return_value = [
+            {"product_id": product_id, "total": 3},
+        ]
+        product = SimpleNamespace(stock=2, updated_at=None, save=Mock())
+        select_for_update.return_value.filter.return_value.first.return_value = product
+        restore_rejected_order_stock(SimpleNamespace(id=uuid.uuid4()))
+        self.assertEqual(product.stock, 5)
+        product.save.assert_called_once_with(update_fields=["stock", "updated_at"])
 
 
 class DemoServiceTests(SimpleTestCase):

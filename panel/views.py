@@ -167,6 +167,24 @@ def apply_payment_decision(order, action, reviewer_id, *, now=None):
     return order
 
 
+def restore_rejected_order_stock(order, *, now=None):
+    """Devuelve al inventario la reserva de un pedido cuyo pago fue rechazado."""
+    now = now or timezone.now()
+    quantities = list(
+        OrderItem.objects.filter(order_id=order.id)
+        .exclude(product_id__isnull=True)
+        .values("product_id")
+        .annotate(total=Sum("quantity"))
+    )
+    for item in quantities:
+        product = Product.objects.select_for_update().filter(id=item["product_id"]).first()
+        if not product:
+            continue
+        product.stock = max(0, int(product.stock or 0)) + int(item["total"] or 0)
+        product.updated_at = now
+        product.save(update_fields=["stock", "updated_at"])
+
+
 def _orders_context(request):
     q = request.GET.get("q", "").strip()
     status = request.GET.get("status", "active").strip().lower()
@@ -1015,11 +1033,15 @@ def payment_review(request, order_id, action):
         return redirect("payments")
     with transaction.atomic():
         order = get_object_or_404(Order.objects.select_for_update(), id=order_id)
+        if order.payment_reviewed_at:
+            messages.info(request, "Este pago ya fue revisado y no se modificó nuevamente.")
+            return redirect("payment_detail", order_id=order.id)
         if action == "reject":
             order.payment_rejection_reason = (
                 request.POST.get("reason", "Comprobante no válido").strip()
                 or "Comprobante no válido"
             )
+            restore_rejected_order_stock(order)
         apply_payment_decision(order, action, request.admin_profile.id)
         order.save(update_fields=[
             "payment_rejection_reason", "payment_reviewed_at", "payment_reviewed_by",

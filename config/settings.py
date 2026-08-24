@@ -122,7 +122,11 @@ CACHES = {
         "OPTIONS": {"MAX_ENTRIES": 1000, "CULL_FREQUENCY": 3},
     }
 }
-SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+# Render ejecuta varios workers y LocMemCache no se comparte entre procesos.
+# `cached_db` podía entregar copias diferentes de un mismo carrito, haciendo que
+# desapareciera al aplicar/quitar un cupón y reapareciera en la siguiente visita.
+# La sesión de base de datos mantiene un único estado autoritativo por usuario.
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
