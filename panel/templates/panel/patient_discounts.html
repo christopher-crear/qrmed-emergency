@@ -11,10 +11,30 @@
   <section class="ticket-wallet">
     <header><h2>Mi billetera</h2><span>{{ filtered_count }} ticket{{ filtered_count|pluralize }}</span></header>
     <div class="ticket-wallet-grid">
-      {% for row in ticket_rows %}<article class="wallet-ticket {% if row.ticket.used_at %}is-used{% elif not row.is_available %}is-expired{% endif %}">
-        <div class="wallet-ticket-main"><small>{{ row.campaign.code }}</small><h3>{{ row.campaign.title }}</h3><strong>{% if row.campaign.discount_type == 'percentage' %}{{ row.campaign.discount_value|floatformat:'-2' }}%{% else %}{{ row.campaign.discount_value|money }}{% endif %} OFF</strong><p>{{ row.campaign.description|default:'Ticket promocional QRMed.' }}</p></div>
-        <div class="wallet-ticket-stub"><i data-lucide="qr-code"></i><span>{% if row.ticket.used_at %}UTILIZADO{% elif row.is_available %}DISPONIBLE{% else %}VENCIDO{% endif %}</span><small>{% if row.campaign.expires_at %}{{ row.campaign.expires_at|date:'d/m/Y' }}{% else %}Sin vencimiento{% endif %}</small></div>
-        {% if row.is_available %}<form method="post" action="{% url 'patient_cart_discount_apply' %}">{% csrf_token %}<input type="hidden" name="discount_code" value="{{ row.campaign.code }}"><button><i data-lucide="shopping-cart"></i> Usar en el carrito</button></form>{% endif %}
+      {% for row in ticket_rows %}<article class="campaign-ticket-v4 campaign-ticket-v4--client ticket-tone-{% cycle 'violet' 'blue' %} {% if row.ticket.used_at %}is-used{% elif not row.is_available %}is-expired{% endif %}">
+        <div class="campaign-ticket-v4__body">
+          <div class="campaign-ticket-v4__topline">
+            <span class="campaign-ticket-v4__state {% if row.is_available %}is-available{% endif %}">{% if row.ticket.used_at %}Utilizado{% elif row.is_available %}Disponible{% else %}Vencido{% endif %}</span>
+            <span class="campaign-ticket-v4__brand">QRMED TICKET</span>
+          </div>
+          <small class="campaign-ticket-v4__label">CAMPAÑA</small>
+          <h3>{{ row.campaign.title }}</h3>
+          <p>{{ row.campaign.description|default:'Ticket promocional QRMed.' }}</p>
+          <div class="campaign-ticket-v4__footer">
+            <div class="campaign-ticket-v4__discount"><small>DESCUENTO</small><strong>{% if row.campaign.discount_type == 'percentage' %}{{ row.campaign.discount_value|floatformat:'-2' }}%{% else %}{{ row.campaign.discount_value|money }}{% endif %} OFF</strong></div>
+            <div class="campaign-ticket-v4__barcode" aria-hidden="true"></div>
+            <dl>
+              <div><dt>Compra mínima</dt><dd>{{ row.campaign.min_order_amount|money }}</dd></div>
+              <div><dt>Obtenido</dt><dd>{% if row.ticket.claimed_at %}{{ row.ticket.claimed_at|date:'d/m/Y' }}{% else %}—{% endif %}</dd></div>
+              <div><dt>Vence</dt><dd>{% if row.campaign.expires_at %}{{ row.campaign.expires_at|date:'d/m/Y' }}{% else %}Sin límite{% endif %}</dd></div>
+            </dl>
+          </div>
+        </div>
+        <aside class="campaign-ticket-v4__stub">
+          <div class="campaign-ticket-v4__stub-code"><i data-lucide="qr-code"></i><span>{{ row.campaign.code }}</span></div>
+          <div class="campaign-ticket-v4__client-status"><span>ESTADO</span><strong>{% if row.ticket.used_at %}UTILIZADO{% elif row.is_available %}DISPONIBLE{% else %}VENCIDO{% endif %}</strong><small>{% if row.campaign.expires_at %}Hasta {{ row.campaign.expires_at|date:'d/m/Y' }}{% else %}Sin vencimiento{% endif %}</small></div>
+          {% if row.is_available %}<form class="campaign-ticket-v4__use" method="post" action="{% url 'patient_cart_discount_apply' %}">{% csrf_token %}<input type="hidden" name="discount_code" value="{{ row.campaign.code }}"><button><i data-lucide="shopping-cart"></i> Usar en el carrito</button></form>{% endif %}
+        </aside>
       </article>{% empty %}<div class="discount-empty"><i data-lucide="ticket-x"></i><h3>Aún no tienes tickets</h3><p>Cuando aparezca una campaña, pulsa “Agarrar ticket”.</p></div>{% endfor %}
     </div>
     {% include 'panel/partials/pagination.html' %}
