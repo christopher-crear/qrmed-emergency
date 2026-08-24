@@ -1,11 +1,13 @@
 import mimetypes
 import logging
 import uuid
+from io import BytesIO
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import requests
+from PIL import Image, ImageOps, UnidentifiedImageError
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.storage import default_storage
@@ -138,12 +140,41 @@ def get_auth_user(access_token):
 def update_password(access_token, new_password):
     if settings.DEMO_MODE:
         return True
-    response = requests.put(
-        f"{settings.SUPABASE_URL}/auth/v1/user", headers=_auth_headers(access_token),
-        json={"password": new_password}, timeout=15,
-    )
+    try:
+        response = requests.put(
+            f"{settings.SUPABASE_URL}/auth/v1/user", headers=_auth_headers(access_token),
+            json={"password": new_password}, timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise SupabaseError("No se pudo conectar con Supabase para actualizar la contraseña.") from exc
     if not response.ok:
-        raise SupabaseError(response.json().get("msg", "No se pudo actualizar la contraseña."))
+        try:
+            detail = response.json().get("msg") or response.json().get("message")
+        except ValueError:
+            detail = None
+        raise SupabaseError(detail or "No se pudo actualizar la contraseña.")
+    return True
+
+
+def request_password_reset(email, redirect_url):
+    """Solicita a Supabase un enlace de recuperación; nunca expone la clave actual."""
+    if settings.DEMO_MODE:
+        return True
+    try:
+        response = requests.post(
+            f"{settings.SUPABASE_URL}/auth/v1/recover",
+            headers=_auth_headers(),
+            json={"email": str(email or "").strip().lower(), "redirect_to": redirect_url},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise SupabaseError("No se pudo conectar con Supabase para recuperar la contraseña.") from exc
+    if not response.ok:
+        try:
+            detail = response.json().get("msg") or response.json().get("message")
+        except ValueError:
+            detail = None
+        raise SupabaseError(detail or "No se pudo enviar el enlace de recuperación.")
     return True
 
 
@@ -375,7 +406,9 @@ def storage_image_candidates(bucket, stored_path="", identifiers=(), keywords=()
         candidates.append(normalized)
     else:
         candidates.extend(_storage_matches_from_database(bucket, identifiers, keywords))
-        candidates.extend(_storage_matches_from_api(bucket, identifiers, keywords))
+        # Evita decenas de peticiones REST durante una carga web cuando una
+        # ruta antigua no existe. Esa búsqueda era la principal fuente de
+        # timeouts en Render.
 
     unique = []
     for candidate in candidates:
@@ -514,6 +547,23 @@ def upload_file(uploaded_file, bucket, folder, filename_prefix="", access_token=
     payload = uploaded_file.read()
     if not payload:
         raise SupabaseError("El archivo seleccionado está vacío o no pudo leerse.")
+    if content_type.startswith("image/"):
+        try:
+            with Image.open(BytesIO(payload)) as source:
+                source = ImageOps.exif_transpose(source)
+                source.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+                if source.mode not in {"RGB", "RGBA"}:
+                    source = source.convert("RGBA" if "transparency" in source.info else "RGB")
+                optimized = BytesIO()
+                source.save(optimized, format="WEBP", quality=78, method=6)
+                payload = optimized.getvalue()
+                content_type = "image/webp"
+                object_path = str(Path(object_path).with_suffix(".webp"))
+        except (UnidentifiedImageError, OSError, ValueError):
+            # Los formularios ImageField ya validan las imágenes de usuario.
+            # Se conserva el contenido para compatibilidad con archivos
+            # heredados o pruebas que usan cargas simuladas.
+            pass
     last_status = None
     for auth_source, base_headers in _storage_auth_options(access_token):
         headers = dict(base_headers)

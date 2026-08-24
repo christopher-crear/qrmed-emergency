@@ -1,6 +1,6 @@
-# Activar Google y Facebook en Supabase
+# Activar Google en Supabase
 
-El código del sistema ya incluye los botones, el retorno OAuth, la creación del perfil y la ficha médica inicial. Para que los proveedores acepten el acceso hay que habilitarlos una sola vez en Supabase.
+El inicio de sesión con Facebook fue retirado. El sistema conserva únicamente Google como proveedor social opcional.
 
 ## 1. URL de retorno de QRMed
 
@@ -28,23 +28,12 @@ http://localhost:8000/login/social/callback/
 
 3. En **Supabase → Authentication → Providers → Google**, activa el proveedor y pega el Client ID y Client Secret.
 
-## 3. Facebook
-
-1. En Meta for Developers crea una aplicación y habilita Facebook Login.
-2. En **Valid OAuth Redirect URIs** agrega:
-
-   ```text
-   https://TU_PROJECT_REF.supabase.co/auth/v1/callback
-   ```
-
-3. En **Supabase → Authentication → Providers → Facebook**, activa el proveedor y pega el App ID y App Secret.
-
 ## Flujo implementado
 
 - Una cuenta nueva se registra como usuario/paciente, nunca como administrador.
-- Se guardan nombre, correo y fotografía proporcionados por Google o Facebook.
+- Se guardan nombre, correo y fotografía proporcionados por Google.
 - Se crea una ficha médica provisional asociada al usuario.
 - Al entrar por primera vez aparece una ventana solicitando completar la ficha médica.
 - La ventana deja de aparecer después de terminar los tres pasos de la ficha.
 
-No agregues Client Secret ni App Secret a Render: esos secretos permanecen guardados en Supabase.
+No agregues el Client Secret de Google a Render: ese secreto permanece guardado en Supabase.

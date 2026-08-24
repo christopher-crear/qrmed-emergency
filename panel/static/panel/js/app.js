@@ -34,6 +34,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelector('[data-close-onboarding]')?.addEventListener('click', () => document.getElementById('medicalOnboarding')?.remove());
 
+  document.querySelectorAll('[data-toggle-password]').forEach(button => button.addEventListener('click', () => {
+    const input = button.parentElement?.querySelector('input[type="password"], input[data-password-visible]');
+    if (!input) return;
+    input.type = input.type === 'password' ? 'text' : 'password';
+    input.toggleAttribute('data-password-visible', input.type === 'text');
+    button.setAttribute('aria-label', input.type === 'text' ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  }));
+  document.querySelectorAll('[data-numeric]').forEach(input => input.addEventListener('input', () => {
+    const allowPlus = input.getAttribute('pattern')?.includes('+');
+    input.value = input.value.replace(allowPlus ? /[^0-9+]/g : /\D/g, '');
+  }));
+
   const invoiceModal = document.getElementById('invoicePreviewModal');
   const invoiceFrame = document.getElementById('invoicePreviewFrame');
   const closeInvoicePreview = () => {

@@ -11,8 +11,9 @@ from django.urls import reverse
 
 from panel.forms import (
     PatientEmergencyForm, PatientMedicalForm, PatientPersonalForm,
-    ProfileForm, patient_sex_choices,
+    ProfileForm, patient_sex_choices, validate_ecuador_cedula,
 )
+from panel.patient_utils import medical_profile_is_complete
 from panel.models import Patient
 from panel.services import (
     SupabaseError, normalize_storage_path, public_storage_url, sign_in,
@@ -61,6 +62,22 @@ class AccountAvatarTests(SimpleTestCase):
 
 
 class PatientFormTests(SimpleTestCase):
+    def test_ecuadorian_cedula_checksum(self):
+        self.assertEqual(validate_ecuador_cedula("1104091689"), "1104091689")
+        with self.assertRaises(forms.ValidationError):
+            validate_ecuador_cedula("1104091688")
+
+    def test_qr_requires_a_complete_medical_profile(self):
+        patient = Patient(
+            first_name="Christopher", last_name="Eras", id_number="1104091689",
+            birth_date="2007-03-02", sex="male", phone="0989414258",
+            email="cderas@example.com", address="Loja", city="Loja", blood_type="O+",
+            emergency_name="Contacto", emergency_relationship="Madre",
+            emergency_phone="0987654321",
+        )
+        self.assertTrue(medical_profile_is_complete(patient))
+        patient.blood_type = ""
+        self.assertFalse(medical_profile_is_complete(patient))
     def test_sex_uses_database_values_and_spanish_labels(self):
         form = PatientPersonalForm()
         choices = dict(form.fields["sex"].choices)

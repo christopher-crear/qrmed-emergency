@@ -22,8 +22,8 @@
           <label class="span-2">Nombre completo<input type="text" name="shipping_name" value="{{ shipping.name }}" required autocomplete="name"></label>
           <label class="span-2">Dirección<input type="text" name="shipping_address" value="{{ shipping.address }}" required autocomplete="street-address"></label>
           <label>Ciudad<input type="text" name="shipping_city" value="{{ shipping.city }}" required autocomplete="address-level2"></label>
-          <label>Código postal<input type="text" name="shipping_postal" value="{{ shipping.postal }}" autocomplete="postal-code"></label>
-          <label class="span-2">Teléfono de contacto<input type="tel" name="shipping_phone" value="{{ shipping.phone }}" required autocomplete="tel"></label>
+          <label>Código postal<input type="text" name="shipping_postal" value="{{ shipping.postal }}" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="postal-code"></label>
+          <label class="span-2">Teléfono de contacto<input type="tel" name="shipping_phone" value="{{ shipping.phone }}" required inputmode="numeric" pattern="0[0-9]{8,9}" maxlength="10" autocomplete="tel"></label>
         </div>
         <button class="btn btn-primary checkout-next" type="button" data-next-step="2">Continuar al método de pago <i data-lucide="arrow-right"></i></button>
       </section>
@@ -39,7 +39,7 @@
           <div class="checkout-bank-selector" aria-label="Selecciona la cuenta bancaria">
             {% for bank in bank_accounts %}
               <label>
-                <input type="radio" name="bank_account" value="{{ bank.id }}" {% if selected_bank and bank.id == selected_bank.id %}checked{% endif %}>
+                <input type="radio" name="bank_account" value="{{ bank.id }}" required {% if selected_bank and bank.id == selected_bank.id %}checked{% endif %}>
                 <span>
                   <span class="checkout-bank-logo">{% if bank.logo_url %}<img src="{{ bank.logo_url }}" alt="Logo {{ bank.bank_name }}" loading="lazy" decoding="async">{% else %}<i data-lucide="landmark"></i>{% endif %}</span>
                   <span><strong>{{ bank.bank_name }}</strong><small>{{ bank.account_type }} · Cuenta {{ bank.account_number|slice:"-4:" }}</small></span>

@@ -198,6 +198,14 @@ Este script no crea una clave foránea hacia `public.orders`, por lo que tambié
 
 La aplicación administra campañas desde `/descuentos/`; los pacientes reclaman tickets en `/mi/descuentos/`. Las facturas aprobadas se envían al buzón del cliente desde la validación de pagos. Las solicitudes de reactivación llegan a `/buzon/` y la eliminación confirmada por contraseña borra la identidad mediante Supabase Auth Admin. Nunca expongas `SUPABASE_SERVICE_ROLE_KEY` en el navegador: debe existir únicamente como variable secreta de Render.
 
+### Actualización del 23 de agosto de 2026
+
+Antes de desplegar esta versión ejecuta también `supabase_mejoras_qrmed_20260823.sql`. El archivo agrega el stock mínimo a productos y guarda el banco utilizado en cada pedido sin eliminar registros existentes.
+
+La recuperación de contraseña usa el correo seguro de Supabase Auth. En **Authentication → URL Configuration** agrega como URL permitida `https://TU-SERVICIO.onrender.com/recuperar-contrasena/nueva/`. Las contraseñas actuales nunca se muestran ni se envían por WhatsApp.
+
+El botón **Enviar por WhatsApp** de la factura utiliza el menú de compartir del dispositivo para adjuntar el PDF. En navegadores que no soportan archivos compartidos abre WhatsApp con el texto listo; por seguridad del navegador, el administrador confirma el envío final.
+
 ## Referencias oficiales
 
 - Django — lista de verificación de despliegue: https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/

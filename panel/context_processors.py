@@ -3,11 +3,12 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.core.cache import cache
 from django.db import DatabaseError
-from django.db.models import Q
+from django.db.models import F, Q
 from django.urls import reverse
 
-from .models import ActivationRequest, DiscountTicket, Invoice, NotificationRead, Order, Patient, Profile
+from .models import ActivationRequest, DiscountTicket, Invoice, NotificationRead, Order, Patient, Product, Profile
 from .services import versioned_media_url
+from .patient_utils import medical_profile_is_complete
 
 
 def _read_link(item):
@@ -56,6 +57,20 @@ def _notification_candidates(profile, patient, is_admin, preferences, needs_medi
                     "target": reverse("order_detail", kwargs={"order_id": order.id}),
                     "icon": "package",
                 })
+        try:
+            low_stock = Product.objects.only("id", "name", "stock", "min_stock").filter(
+                is_active=True, stock__lte=F("min_stock")
+            ).order_by("stock")[:5]
+            for product in low_stock:
+                notifications.append({
+                    "key": f"admin-low-stock:{product.id}:{product.stock}",
+                    "title": "Stock mínimo alcanzado",
+                    "text": f"{product.name}: quedan {product.stock}",
+                    "target": reverse("products"), "icon": "package-minus",
+                })
+        except DatabaseError:
+            # Permite abrir el panel mientras se ejecuta la actualización SQL.
+            pass
     elif patient:
         if needs_medical_profile:
             notifications.append({
@@ -119,8 +134,10 @@ def admin_context(request):
     patient = getattr(request, "patient", None)
     if profile and not is_admin and patient is None:
         patient = Patient.objects.only(
-            "id", "owner_id", "first_name", "last_name", "blood_type", "photo_path",
-            "updated_at", "birth_date", "emergency_phone", "last_qr_scan_at",
+            "id", "owner_id", "first_name", "last_name", "id_number", "birth_date", "sex",
+            "phone", "email", "address", "city", "blood_type", "emergency_name",
+            "emergency_relationship", "emergency_phone", "photo_path", "updated_at",
+            "last_qr_scan_at",
         ).filter(Q(owner_id=profile.id) | Q(id=profile.id)).order_by("-created_at").first()
     avatar_url = ""
     if profile and profile.avatar_path:
@@ -143,7 +160,7 @@ def admin_context(request):
 
     preferences = profile.preferences if profile and isinstance(profile.preferences, dict) else {}
     needs_medical_profile = bool(preferences.get("medical_profile_pending"))
-    if patient and (not patient.birth_date or not patient.blood_type or not patient.emergency_phone):
+    if patient and not medical_profile_is_complete(patient):
         needs_medical_profile = True
 
     ticket_count = 0

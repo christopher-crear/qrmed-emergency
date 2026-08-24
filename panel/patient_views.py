@@ -1,4 +1,5 @@
 import io
+import re
 import secrets
 import uuid
 from decimal import Decimal
@@ -24,6 +25,7 @@ from .models import (
     MedicalDocument, NotificationRead, Order, OrderItem, Patient, PaymentSetting, Product, Profile,
 )
 from .pagination import paginate_items
+from .patient_utils import medical_profile_is_complete, medical_profile_missing_fields
 from .services import (
     SupabaseError, delete_auth_user, delete_storage_files, sign_in, storage_image_bytes, storage_signed_url, update_password, upload_file,
     versioned_media_url,
@@ -159,7 +161,15 @@ def _claim_campaign(request, campaign):
         if existing.used_at:
             raise DiscountClaimError("Ya utilizaste el ticket de esta campaña.")
         return existing, False
-    claimed = DiscountTicket.objects.filter(campaign_id=campaign.id).count()
+    if Order.objects.filter(
+        user_id__in={request.user_profile.id, request.patient.id},
+        discount_code__iexact=campaign.code,
+    ).exists():
+        raise DiscountClaimError("Ya utilizaste el ticket de esta campaña.")
+    claimed = (
+        DiscountTicket.objects.filter(campaign_id=campaign.id).count()
+        + Order.objects.filter(discount_code__iexact=campaign.code).count()
+    )
     if claimed >= campaign.max_claims:
         raise DiscountClaimError("Los tickets de esta campaña se agotaron.")
     ticket = DiscountTicket(
@@ -177,17 +187,28 @@ def _available_discounts(request):
         claimed_ids = set(DiscountTicket.objects.filter(
             user_id=request.user_profile.id
         ).values_list("campaign_id", flat=True))
+        used_codes = set(Order.objects.filter(
+            user_id__in={request.user_profile.id, request.patient.id},
+        ).exclude(discount_code__isnull=True).values_list("discount_code", flat=True))
         campaign_ids = [campaign.id for campaign in campaigns]
         claim_counts = {
             str(row["campaign_id"]): row["total"]
             for row in DiscountTicket.objects.filter(campaign_id__in=campaign_ids)
             .values("campaign_id").annotate(total=Count("id"))
         }
+        used_counts = {
+            str(row["discount_code"] or "").upper(): row["total"]
+            for row in Order.objects.exclude(discount_code__isnull=True)
+            .values("discount_code").annotate(total=Count("id"))
+        }
         result = []
         for campaign in campaigns:
-            if not _campaign_is_open(campaign, now) or campaign.id in claimed_ids:
+            if not _campaign_is_open(campaign, now) or campaign.id in claimed_ids or campaign.code in used_codes:
                 continue
-            campaign.claimed_count = claim_counts.get(str(campaign.id), 0)
+            campaign.claimed_count = (
+                claim_counts.get(str(campaign.id), 0)
+                + used_counts.get(str(campaign.code or "").upper(), 0)
+            )
             campaign.remaining_count = max(0, campaign.max_claims - campaign.claimed_count)
             if campaign.remaining_count:
                 result.append(campaign)
@@ -196,7 +217,7 @@ def _available_discounts(request):
         return []
 
 
-def _cart_context(request):
+def _cart_context(request, *, persist_cleanup=True):
     cart_data = _cart_data(request)
     product_ids = {str(item.get("product_id") or "") for item in cart_data.values()}
     products = {
@@ -233,7 +254,7 @@ def _cart_context(request):
             "size": saved.get("size", ""),
             "line_total": line_total,
         })
-    if cleaned_cart != cart_data:
+    if persist_cleanup and cleaned_cart != cart_data:
         request.session["patient_cart"] = cleaned_cart
         request.session.modified = True
     selected_discount = _selected_discount(request, total)
@@ -295,6 +316,13 @@ def global_search(request):
 
 @patient_required
 def credential(request):
+    missing = medical_profile_missing_fields(request.patient)
+    if missing:
+        messages.warning(
+            request,
+            "Completa tu ficha médica antes de generar el código QR. Faltan: " + ", ".join(missing) + ".",
+        )
+        return redirect("patient_medical_record", step=1)
     return render(request, "panel/patient_credential.html", {
         "issue_date": request.patient.created_at,
     })
@@ -318,6 +346,8 @@ def _credential_qr_bytes(request):
 
 @patient_required
 def credential_qr(request):
+    if not medical_profile_is_complete(request.patient):
+        return HttpResponse("Completa tu ficha médica antes de generar el QR.", status=409)
     image_bytes = _credential_qr_bytes(request)
     response = HttpResponse(image_bytes, content_type="image/png")
     response["Cache-Control"] = "private, max-age=3600"
@@ -382,7 +412,11 @@ def store(request):
 def cart_add(request, product_id):
     product = get_object_or_404(Product, id=product_id, is_active=True, stock__gt=0)
     cart_data = _cart_data(request)
-    quantity = max(1, min(int(request.POST.get("quantity", 1)), max(product.stock, 1)))
+    try:
+        requested_quantity = int(request.POST.get("quantity", 1))
+    except (TypeError, ValueError):
+        requested_quantity = 1
+    quantity = max(1, min(requested_quantity, max(product.stock, 1)))
     colors = product.colors or []
     sizes = product.sizes or []
     color = request.POST.get("color", "").strip()
@@ -459,7 +493,8 @@ def cart_discount_apply(request):
             if not campaign:
                 raise DiscountClaimError("El código ingresado no existe.")
             ticket, created = _claim_campaign(request, campaign)
-            subtotal = _cart_context(request)["cart_subtotal"]
+            # Aplicar un cupón nunca elimina ni reescribe líneas del carrito.
+            subtotal = _cart_context(request, persist_cleanup=False)["cart_subtotal"]
             if subtotal < Decimal(campaign.min_order_amount or 0):
                 raise DiscountClaimError(f"Este ticket requiere una compra mínima de ${campaign.min_order_amount}.")
             request.session["discount_ticket_id"] = str(ticket.id)
@@ -539,10 +574,10 @@ def checkout(request):
         bank.logo_url = reverse("bank_asset_image", kwargs={"bank_id": bank.id, "kind": "logo"}) if bank.logo_path else ""
         bank.qr_url = reverse("bank_asset_image", kwargs={"bank_id": bank.id, "kind": "qr"}) if bank.qr_path else ""
     selected_bank_id = request.POST.get("bank_account", "").strip()
-    if not selected_bank_id and bank_accounts:
+    if request.method != "POST" and not selected_bank_id and bank_accounts:
         selected_bank_id = str(bank_accounts[0].id)
     selected_bank = next((bank for bank in bank_accounts if str(bank.id) == selected_bank_id), None)
-    if bank_accounts and selected_bank is None:
+    if request.method != "POST" and bank_accounts and selected_bank is None:
         selected_bank = bank_accounts[0]
         selected_bank_id = str(selected_bank.id)
     shipping = {
@@ -557,10 +592,20 @@ def checkout(request):
         proof = request.FILES.get("proof")
         method = selected_method
         allowed_types = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-        if not all((shipping["name"], shipping["address"], shipping["city"], shipping["phone"])):
+        phone_digits = re.sub(r"\D", "", shipping["phone"])
+        if phone_digits.startswith("593"):
+            phone_digits = "0" + phone_digits[3:]
+        shipping["phone"] = phone_digits
+        if not all((shipping["name"], shipping["address"], shipping["city"], shipping["postal"], shipping["phone"])):
             messages.error(request, "Completa los datos obligatorios de envío.")
+        elif not re.fullmatch(r"0(?:9\d{8}|[2-7]\d{7})", shipping["phone"]):
+            messages.error(request, "Ingresa un teléfono ecuatoriano válido para el envío.")
+        elif not re.fullmatch(r"\d{6}", shipping["postal"]):
+            messages.error(request, "El código postal debe contener 6 dígitos.")
         elif method not in {"transfer", "deposit"}:
             messages.error(request, "Selecciona un método de pago válido.")
+        elif bank_accounts and not selected_bank:
+            messages.error(request, "Selecciona la cuenta bancaria utilizada para el pago.")
         elif not proof:
             messages.error(request, "Adjunta el comprobante de pago.")
         elif proof.size > 10 * 1024 * 1024 or proof.content_type not in allowed_types:
@@ -599,6 +644,16 @@ def checkout(request):
                             return redirect("patient_cart")
                         discount_amount = _discount_amount(discount_campaign, cart_context["cart_subtotal"])
                     final_total = max(Decimal("0"), cart_context["cart_subtotal"] - discount_amount)
+                    locked_products = {}
+                    for row in cart_context["cart_rows"]:
+                        locked_product = Product.objects.select_for_update().get(id=row["product"].id)
+                        if locked_product.stock < row["quantity"]:
+                            messages.error(
+                                request,
+                                f"El stock de {locked_product.name} cambió. Revisa nuevamente el carrito.",
+                            )
+                            return redirect("patient_cart")
+                        locked_products[str(locked_product.id)] = locked_product
                     order = Order(
                         id=order_id,
                         user_id=request.user_profile.id,
@@ -607,6 +662,8 @@ def checkout(request):
                         discount_amount=discount_amount,
                         discount_code=discount_campaign.code if discount_campaign else None,
                         status="pending", payment_method=method,
+                        payment_bank_id=selected_bank.id if selected_bank else None,
+                        payment_bank_name=selected_bank.bank_name if selected_bank else getattr(payment, "bank_name", None),
                         payment_proof_path=proof_path,
                         shipping_address=shipping["address"], shipping_name=shipping["name"],
                         shipping_city=shipping["city"], shipping_postal=shipping["postal"],
@@ -614,24 +671,26 @@ def checkout(request):
                         created_at=now, updated_at=now,
                     )
                     order.save(force_insert=True)
-                    if discount_ticket:
-                        discount_ticket.used_at = now
-                        discount_ticket.order_id = order.id
-                        discount_ticket.save(update_fields=["used_at", "order_id"])
-                        cache.delete(f"qrmed-ticket-count:{request.user_profile.id}")
                     for row in cart_context["cart_rows"]:
+                        locked_product = locked_products[str(row["product"].id)]
                         OrderItem(
                             id=uuid.uuid4(), order_id=order.id, product_id=row["product"].id,
                             quantity=row["quantity"], unit_price=row["product"].price,
                             selected_color=row["color"], selected_size=row["size"],
                         ).save(force_insert=True)
-                        if row["product"].stock >= row["quantity"]:
-                            row["product"].stock -= row["quantity"]
-                            row["product"].updated_at = now
-                            row["product"].save(update_fields=["stock", "updated_at"])
+                        locked_product.stock -= row["quantity"]
+                        locked_product.updated_at = now
+                        locked_product.save(update_fields=["stock", "updated_at"])
+                    if discount_ticket:
+                        # El pedido conserva el código y el descuento. El ticket se
+                        # elimina únicamente después de completar la compra.
+                        discount_ticket.delete()
+                        cache.delete(f"qrmed-ticket-count:{request.user_profile.id}")
                 request.session["patient_cart"] = {}
                 request.session.pop("discount_ticket_id", None)
                 request.session.modified = True
+                for admin_id in Profile.objects.filter(role__in=["admin", "administrador"]).values_list("id", flat=True):
+                    cache.delete(f"qrmed-notifications:{admin_id}")
                 messages.success(request, f"Pedido {order.order_number} enviado para validar el pago.")
                 return redirect("patient_checkout_success", order_id=order.id)
     context = cart_context
@@ -695,7 +754,13 @@ def medical_record(request, step):
         request.user_profile.preferences = preferences
         request.user_profile.updated_at = timezone.now()
         request.user_profile.save(update_fields=["preferences", "updated_at"])
-        messages.success(request, "Tu ficha médica se actualizó correctamente.")
+        if medical_profile_is_complete(patient):
+            messages.success(request, "Tu ficha médica está completa y el código QR ya fue habilitado.")
+        else:
+            preferences["medical_profile_pending"] = True
+            request.user_profile.preferences = preferences
+            request.user_profile.save(update_fields=["preferences", "updated_at"])
+            messages.warning(request, "La ficha se guardó, pero todavía faltan datos obligatorios para generar el QR.")
         return redirect("patient_dashboard")
     return render(request, "panel/patient_medical_record.html", {"form": form, "step": step})
 

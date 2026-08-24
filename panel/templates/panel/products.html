@@ -16,6 +16,7 @@
       {% include 'panel/partials/field.html' with field=form.name label='Nombre' %}
       {% include 'panel/partials/field.html' with field=form.price label='Precio' %}
       {% include 'panel/partials/field.html' with field=form.stock label='Stock' %}
+      {% include 'panel/partials/field.html' with field=form.min_stock label='Stock mínimo' %}
       {% include 'panel/partials/field.html' with field=form.image_url label='URL o ruta de imagen' %}
       {% include 'panel/partials/field.html' with field=form.colors_text label='Colores (separados por comas)' %}
       {% include 'panel/partials/field.html' with field=form.sizes_text label='Tallas (separadas por comas)' %}
@@ -39,7 +40,7 @@
     {% for product in products %}
     <article class="card product-catalog-card">
       <div class="product-catalog-media">
-        {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" data-image-fallback><span class="product-image-empty" hidden><i data-lucide="image-off"></i><small>La URL de imagen no está disponible</small></span>{% else %}<span class="product-image-empty"><i data-lucide="image"></i><small>Agrega una URL de imagen</small></span>{% endif %}
+        {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async" fetchpriority="low" data-image-fallback><span class="product-image-empty" hidden><i data-lucide="image-off"></i><small>La URL de imagen no está disponible</small></span>{% else %}<span class="product-image-empty"><i data-lucide="image"></i><small>Agrega una URL de imagen</small></span>{% endif %}
         <span class="product-status-dot {% if product.is_active %}active{% else %}inactive{% endif %}">{{ product.is_active|yesno:'Activo,Inactivo' }}</span>
         {% if product.badge %}<span class="product-badge">{{ product.badge }}</span>{% endif %}
       </div>
@@ -49,7 +50,7 @@
           {% if product.colors %}<span><i data-lucide="palette"></i>{{ product.colors|comma_join }}</span>{% endif %}
           {% if product.sizes %}<span><i data-lucide="ruler"></i>{{ product.sizes|comma_join }}</span>{% endif %}
         </div>
-        <div class="product-price-row"><div><strong>{{ product.price|money }}</strong><span>Stock: {{ product.stock }}</span></div><div class="product-card-actions"><a href="?edit={{ product.id }}#productForm" aria-label="Editar {{ product.name }}" title="Editar"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'product_delete' product.id %}">{% csrf_token %}<button type="submit" class="danger" aria-label="Eliminar {{ product.name }}" data-confirm="El producto se eliminará de la base de datos." data-confirm-title="¿Eliminar {{ product.name }}?"><i data-lucide="trash-2"></i></button></form></div></div>
+        <div class="product-price-row"><div><strong>{{ product.price|money }}</strong><span>Stock: {{ product.stock }} · Mínimo: {{ product.min_stock }}</span></div><div class="product-card-actions"><a href="?edit={{ product.id }}#productForm" aria-label="Editar {{ product.name }}" title="Editar"><i data-lucide="pencil"></i></a><form method="post" action="{% url 'product_delete' product.id %}">{% csrf_token %}<button type="submit" class="danger" aria-label="Eliminar {{ product.name }}" data-confirm="El producto se eliminará de la base de datos." data-confirm-title="¿Eliminar {{ product.name }}?"><i data-lucide="trash-2"></i></button></form></div></div>
       </div>
     </article>
     {% empty %}

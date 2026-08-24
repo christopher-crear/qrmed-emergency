@@ -7,7 +7,7 @@ from collections import Counter
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from django.conf import settings
 from django.contrib import messages
@@ -32,8 +32,9 @@ from .models import (
     NotificationRead, Order, OrderItem, Patient, PaymentSetting, Product, Profile,
 )
 from .pagination import paginate_items
+from .patient_utils import medical_profile_is_complete
 from .services import (
-    SupabaseError, get_auth_user, sign_in, sign_up, storage_image_bytes, storage_image_signed_url, storage_signed_url,
+    SupabaseError, get_auth_user, request_password_reset, sign_in, sign_up, storage_image_bytes, storage_image_signed_url, storage_signed_url,
     update_password, upload_file, versioned_media_url,
 )
 
@@ -94,6 +95,10 @@ def _order_context(order):
         invoice = Invoice.objects.filter(order_id=order.id).first()
     except DatabaseError:
         invoice = None
+    customer_phone = str(getattr(patient, "phone", "") or getattr(profile, "phone", "") or order.shipping_phone or "")
+    whatsapp_phone = "".join(character for character in customer_phone if character.isdigit())
+    if whatsapp_phone.startswith("0"):
+        whatsapp_phone = "593" + whatsapp_phone[1:]
     return {
         "order": order,
         "items": items,
@@ -108,6 +113,7 @@ def _order_context(order):
         "proof_is_pdf": proof_is_pdf,
         "customer_avatar_url": _customer_avatar_url(patient, profile),
         "invoice": invoice,
+        "whatsapp_phone": whatsapp_phone,
     }
 
 
@@ -446,7 +452,7 @@ def login_view(request):
 
 
 def oauth_start(request, provider):
-    if provider not in {"google", "facebook"}:
+    if provider != "google":
         return redirect("login")
     if settings.DEMO_MODE or not settings.SUPABASE_URL:
         messages.error(request, "Configura Supabase Auth para habilitar el acceso social.")
@@ -454,6 +460,48 @@ def oauth_start(request, provider):
     callback = request.build_absolute_uri(reverse("oauth_callback"))
     query = urlencode({"provider": provider, "redirect_to": callback})
     return redirect(f"{settings.SUPABASE_URL}/auth/v1/authorize?{query}")
+
+
+def password_reset_request(request):
+    if request.method == "POST":
+        email = str(request.POST.get("email") or "").strip().lower()
+        if not email:
+            messages.error(request, "Ingresa el correo electrónico de tu cuenta.")
+        else:
+            try:
+                request_password_reset(
+                    email,
+                    request.build_absolute_uri(reverse("password_reset_page")),
+                )
+            except SupabaseError as exc:
+                messages.error(request, str(exc))
+            else:
+                messages.success(request, "Si el correo está registrado, recibirás un enlace para crear una nueva contraseña.")
+                return redirect("login")
+    return render(request, "panel/password_reset_request.html")
+
+
+def password_reset_page(request):
+    return render(request, "panel/password_reset.html")
+
+
+@require_POST
+def password_reset_complete(request):
+    try:
+        payload = json.loads(request.body or "{}")
+        access_token = str(payload.get("access_token") or "")
+        password = str(payload.get("password") or "")
+        confirmation = str(payload.get("confirmation") or "")
+        if not access_token:
+            raise SupabaseError("El enlace de recuperación es inválido o expiró.")
+        if len(password) < 8:
+            raise SupabaseError("La nueva contraseña debe tener al menos 8 caracteres.")
+        if password != confirmation:
+            raise SupabaseError("Las contraseñas no coinciden.")
+        update_password(access_token, password)
+        return JsonResponse({"ok": True, "redirect": reverse("login")})
+    except (json.JSONDecodeError, SupabaseError) as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
 
 
 def oauth_callback(request):
@@ -763,6 +811,7 @@ def patients(request):
             reverse("profile_avatar_image", kwargs={"profile_id": profile.id})
             if profile else ""
         )
+        patient.qr_enabled = medical_profile_is_complete(patient)
     return render(request, "panel/patients.html", {
         "patients": patient_rows,
         "q": q,
@@ -822,7 +871,11 @@ def patients_export(request):
 
 @admin_required
 def patient_detail(request, patient_id):
-    return render(request, "panel/patient_detail.html", {"patient": get_object_or_404(Patient, id=patient_id)})
+    patient = get_object_or_404(Patient, id=patient_id)
+    return render(request, "panel/patient_detail.html", {
+        "patient": patient,
+        "qr_enabled": medical_profile_is_complete(patient),
+    })
 
 
 @admin_required
@@ -830,6 +883,8 @@ def patient_qr_image(request, patient_id):
     import qrcode
 
     patient = get_object_or_404(Patient, id=patient_id)
+    if not medical_profile_is_complete(patient):
+        return HttpResponse("Completa la ficha médica antes de generar el QR.", status=409)
     public_url = request.build_absolute_uri(reverse("public_patient", kwargs={"token": patient.qr_token}))
     qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=2)
     qr.add_data(public_url)
@@ -860,12 +915,24 @@ def public_patient(request, token):
     preferences = profile_obj.preferences if profile_obj and isinstance(profile_obj.preferences, dict) else {}
     if preferences.get("public_profile", True) is False:
         return HttpResponse("Esta ficha de emergencia está configurada como privada.", status=403)
+    if not medical_profile_is_complete(patient):
+        return HttpResponse("Esta ficha todavía no está completa y su código QR no ha sido habilitado.", status=409)
     if preferences.get("analytics", True):
         Patient.objects.filter(id=patient.id).update(
             qr_scan_count=F("qr_scan_count") + 1,
             last_qr_scan_at=timezone.now(),
         )
-    return render(request, "panel/public_patient.html", {"patient": patient})
+    phone_digits = "".join(character for character in str(patient.emergency_phone or "") if character.isdigit())
+    if phone_digits.startswith("0"):
+        phone_digits = "593" + phone_digits[1:]
+    whatsapp_text = quote(
+        f"Hola, escaneé la manilla QRMed de {patient.full_name}. "
+        "Me comunico por una situación relacionada con su ficha de emergencia."
+    )
+    return render(request, "panel/public_patient.html", {
+        "patient": patient,
+        "whatsapp_url": f"https://wa.me/{phone_digits}?text={whatsapp_text}" if phone_digits else "",
+    })
 
 
 @admin_required

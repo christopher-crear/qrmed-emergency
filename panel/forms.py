@@ -17,6 +17,44 @@ DEFAULT_SEX_CHOICES = (
 )
 
 
+def validate_ecuador_cedula(value):
+    """Valida una cédula ecuatoriana de 10 dígitos con módulo 10."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    if len(digits) != 10:
+        raise forms.ValidationError("La cédula debe contener exactamente 10 dígitos.")
+    province = int(digits[:2])
+    third_digit = int(digits[2])
+    if province < 1 or province > 24 or third_digit >= 6:
+        raise forms.ValidationError("La cédula ecuatoriana ingresada no es válida.")
+    total = 0
+    for index, digit in enumerate(map(int, digits[:9])):
+        product = digit * (2 if index % 2 == 0 else 1)
+        total += product - 9 if product > 9 else product
+    verifier = (10 - (total % 10)) % 10
+    if verifier != int(digits[-1]):
+        raise forms.ValidationError("La cédula ecuatoriana ingresada no es válida.")
+    return digits
+
+
+def normalize_ecuador_phone(value, *, required=True):
+    raw = str(value or "").strip()
+    digits = re.sub(r"\D", "", raw)
+    if not digits and not required:
+        return ""
+    if digits.startswith("593"):
+        digits = "0" + digits[3:]
+    if not re.fullmatch(r"0(?:9\d{8}|[2-7]\d{7})", digits):
+        raise forms.ValidationError("Ingresa un teléfono ecuatoriano válido, por ejemplo 0987654321.")
+    return digits
+
+
+def validate_person_name(value):
+    cleaned = " ".join(str(value or "").split())
+    if not cleaned or not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+", cleaned):
+        raise forms.ValidationError("Utiliza únicamente letras, espacios, apóstrofes o guiones.")
+    return cleaned
+
+
 def sex_label(value):
     normalized = str(value or "").strip().casefold()
     if normalized in {"m", "male", "masculino", "hombre"}:
@@ -115,6 +153,18 @@ class StyledFormMixin:
             else:
                 field.widget.attrs.setdefault("class", "form-control")
 
+        numeric_names = {
+            "phone", "emergency_phone", "emergency2_phone", "id_number",
+            "account_number", "tax_id", "display_order", "stock", "min_stock",
+            "max_claims",
+        }
+        for name, field in self.fields.items():
+            if name in numeric_names:
+                field.widget.attrs.setdefault("inputmode", "numeric")
+                if not isinstance(field.widget, forms.NumberInput):
+                    field.widget.attrs.setdefault("pattern", "[0-9+]*" if name == "phone" else "[0-9]*")
+                field.widget.attrs.setdefault("data-numeric", "")
+
         # Los datos heredados pueden venir serializados como JSON, arrays de
         # PostgreSQL o representaciones de Python. En los inputs mostramos solo
         # el contenido legible, nunca llaves/corchetes de serialización.
@@ -133,7 +183,7 @@ class RegistrationForm(StyledFormMixin, forms.Form):
     first_name = forms.CharField(max_length=80, label="Nombres")
     last_name = forms.CharField(max_length=80, label="Apellidos")
     email = forms.EmailField(label="Correo electrónico")
-    phone = forms.CharField(max_length=25, label="Número de teléfono")
+    phone = forms.CharField(max_length=10, label="Número de teléfono")
     password = forms.CharField(label="Contraseña", widget=forms.PasswordInput())
     password_confirm = forms.CharField(label="Confirmar contraseña", widget=forms.PasswordInput())
     accept_terms = forms.BooleanField(
@@ -144,10 +194,13 @@ class RegistrationForm(StyledFormMixin, forms.Form):
         return str(self.cleaned_data.get("email") or "").strip().lower()
 
     def clean_phone(self):
-        value = re.sub(r"[^0-9+]", "", str(self.cleaned_data.get("phone") or ""))
-        if len(value.replace("+", "")) < 7:
-            raise forms.ValidationError("Ingresa un número de teléfono válido.")
-        return value
+        return normalize_ecuador_phone(self.cleaned_data.get("phone"))
+
+    def clean_first_name(self):
+        return validate_person_name(self.cleaned_data.get("first_name"))
+
+    def clean_last_name(self):
+        return validate_person_name(self.cleaned_data.get("last_name"))
 
     def clean(self):
         data = super().clean()
@@ -191,6 +244,8 @@ class PatientPersonalForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        for name in ("first_name", "last_name", "id_number", "birth_date", "sex", "phone", "email", "address", "city"):
+            self.fields[name].required = True
         self.fields["birth_date"].input_formats = ["%Y-%m-%d"]
         choices = list(patient_sex_choices())
         current_sex = getattr(self.instance, "sex", "") if self.instance else ""
@@ -207,6 +262,18 @@ class PatientPersonalForm(StyledFormMixin, forms.ModelForm):
         if not value:
             raise forms.ValidationError("Selecciona un sexo valido.")
         return value
+
+    def clean_first_name(self):
+        return validate_person_name(self.cleaned_data.get("first_name"))
+
+    def clean_last_name(self):
+        return validate_person_name(self.cleaned_data.get("last_name"))
+
+    def clean_id_number(self):
+        return validate_ecuador_cedula(self.cleaned_data.get("id_number"))
+
+    def clean_phone(self):
+        return normalize_ecuador_phone(self.cleaned_data.get("phone"))
 
     def clean_photo(self):
         photo = self.cleaned_data.get("photo")
@@ -238,6 +305,7 @@ class PatientMedicalForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["blood_type"].required = True
         if self.instance and self.instance.pk and not self.is_bound:
             for name in ("allergies", "diseases", "medications"):
                 self.fields[name].initial = humanize_value(getattr(self.instance, name, None))
@@ -276,6 +344,12 @@ class PatientEmergencyForm(StyledFormMixin, forms.ModelForm):
                 self.add_error(name, "Este campo es obligatorio para el contacto principal.")
         return data
 
+    def clean_emergency_phone(self):
+        return normalize_ecuador_phone(self.cleaned_data.get("emergency_phone"))
+
+    def clean_emergency2_phone(self):
+        return normalize_ecuador_phone(self.cleaned_data.get("emergency2_phone"), required=False)
+
 
 class ProductForm(StyledFormMixin, forms.ModelForm):
     colors_text = forms.CharField(required=False, label="Colores (separados por comas)")
@@ -283,11 +357,12 @@ class ProductForm(StyledFormMixin, forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ["name", "price", "stock", "image_url", "badge", "description", "is_active"]
+        fields = ["name", "price", "stock", "min_stock", "image_url", "badge", "description", "is_active"]
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "Ej. Pulsera médica premium"}),
             "price": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "stock": forms.NumberInput(attrs={"min": "0"}),
+            "min_stock": forms.NumberInput(attrs={"min": "0"}),
             "image_url": forms.TextInput(attrs={"placeholder": "URL pública o ruta de Supabase Storage"}),
             "badge": forms.TextInput(attrs={"placeholder": "Ej. Más popular"}),
             "description": forms.Textarea(attrs={"rows": 3, "placeholder": "Describe las características del producto..."}),
@@ -387,6 +462,9 @@ class ProfileForm(StyledFormMixin, forms.ModelForm):
             "specialty": forms.TextInput(attrs={"autocomplete": "organization-title"}),
         }
 
+    def clean_phone(self):
+        return normalize_ecuador_phone(self.cleaned_data.get("phone"), required=False)
+
 
 class BankAccountForm(StyledFormMixin, forms.ModelForm):
     logo = forms.ImageField(
@@ -446,7 +524,7 @@ class BankAccountForm(StyledFormMixin, forms.ModelForm):
         return value
 
     def clean_account_number(self):
-        value = re.sub(r"\s+", "", self.cleaned_data.get("account_number") or "")
+        value = re.sub(r"\D", "", self.cleaned_data.get("account_number") or "")
         if not value:
             raise forms.ValidationError("Ingresa el número de cuenta.")
         if len(value) > 40:
@@ -454,14 +532,38 @@ class BankAccountForm(StyledFormMixin, forms.ModelForm):
         return value
 
     def clean_tax_id(self):
-        value = re.sub(r"\s+", "", self.cleaned_data.get("tax_id") or "")
+        value = re.sub(r"\D", "", self.cleaned_data.get("tax_id") or "")
         if not value:
             raise forms.ValidationError("Ingresa la cédula o RUC del titular.")
+        if len(value) == 10:
+            return validate_ecuador_cedula(value)
+        if len(value) != 13 or not value.endswith("001"):
+            raise forms.ValidationError("Ingresa una cédula válida o un RUC de 13 dígitos terminado en 001.")
         return value
 
 
 class PaymentSettingForm(StyledFormMixin, forms.ModelForm):
+    notification_email = forms.EmailField(label="Correo de notificaciones")
     class Meta:
         model = PaymentSetting
         fields = ["bank_name", "account_type", "account_number", "interbank_code", "account_holder", "tax_id", "notification_email", "transfer_qr_payload"]
         widgets = {"transfer_qr_payload": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ("bank_name", "account_type", "account_number", "account_holder", "tax_id", "notification_email"):
+            self.fields[name].required = True
+
+    def clean_account_number(self):
+        value = re.sub(r"\D", "", self.cleaned_data.get("account_number") or "")
+        if not value:
+            raise forms.ValidationError("Ingresa un número de cuenta válido.")
+        return value
+
+    def clean_tax_id(self):
+        value = re.sub(r"\D", "", self.cleaned_data.get("tax_id") or "")
+        if len(value) == 10:
+            return validate_ecuador_cedula(value)
+        if len(value) != 13 or not value.endswith("001"):
+            raise forms.ValidationError("Ingresa una cédula válida o un RUC de 13 dígitos terminado en 001.")
+        return value
