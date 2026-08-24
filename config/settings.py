@@ -131,6 +131,12 @@ SESSION_ENGINE = "django.contrib.sessions.backends.db"
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+# URL pública estable para callbacks enviados por correo. Render expone
+# RENDER_EXTERNAL_URL; QRMED_PUBLIC_URL permite fijarla explícitamente.
+QRMED_PUBLIC_URL = (
+    os.getenv("QRMED_PUBLIC_URL", "").strip()
+    or os.getenv("RENDER_EXTERNAL_URL", "").strip()
+).rstrip("/")
 SUPABASE_PATIENT_BUCKET = os.getenv("SUPABASE_PATIENT_BUCKET", "patient-photos")
 SUPABASE_PAYMENT_BUCKET = os.getenv("SUPABASE_PAYMENT_BUCKET", "payment-proofs")
 QRMED_COMPANY_NAME = os.getenv("QRMED_COMPANY_NAME", "QRMed Emergency")

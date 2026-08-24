@@ -11,6 +11,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'panel/css/landing.css' %}">
+  <script>
+    // Respaldo cuando Supabase devuelve la recuperación al Site URL.
+    const recoveryParams = new URLSearchParams(location.hash.slice(1));
+    if (recoveryParams.get('type') === 'recovery') {
+      location.replace('{% url "password_reset_page" %}' + location.hash);
+    }
+  </script>
 </head>
 <body>
   <header class="site-header" id="inicio">

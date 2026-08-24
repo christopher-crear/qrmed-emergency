@@ -61,7 +61,19 @@ http://127.0.0.1:8000/recuperar-contrasena/nueva/
 http://localhost:8000/recuperar-contrasena/nueva/
 ```
 
-Sin esa autorización Supabase no podrá devolver al usuario a la pantalla donde escribe y confirma la contraseña nueva. Para producción configura además un SMTP propio; el proveedor de prueba de Supabase tiene límites reducidos.
+Configura **Site URL** con:
+
+```text
+https://qrmed-emergency-yp3g.onrender.com
+```
+
+En **Authentication → Email Templates → Reset password**, el enlace del botón debe conservar la URL de confirmación completa:
+
+```html
+<a href="{{ .ConfirmationURL }}">Restablecer mi contraseña</a>
+```
+
+No reemplaces `ConfirmationURL` por `SiteURL`: la primera incluye el token de un solo uso y el destino solicitado por QRMed. Sin la URL autorizada Supabase volverá al Site URL. QRMed incluye un respaldo que detecta `type=recovery` en la portada y conduce a la pantalla correcta. Para producción configura además un SMTP propio; el proveedor de prueba de Supabase tiene límites reducidos.
 
 Obtén `DATABASE_URL` en Supabase: **Project → Connect → Transaction pooler**. Para la aplicación Django usa el puerto `6543`; es compatible con IPv4 y permite reutilizar mejor las conexiones. El proyecto desactiva automáticamente consultas preparadas y cursores de servidor al detectar ese puerto. `DATABASE_CONN_MAX_AGE=0` evita que cada proceso de Django reserve una conexión de forma persistente.
 

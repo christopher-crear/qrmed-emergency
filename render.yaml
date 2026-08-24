@@ -28,6 +28,8 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: QRMED_PUBLIC_URL
+        value: https://qrmed-emergency-yp3g.onrender.com
       - key: SUPABASE_PATIENT_BUCKET
         value: patient-photos
       - key: SUPABASE_PAYMENT_BUCKET

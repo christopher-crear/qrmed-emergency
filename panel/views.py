@@ -604,6 +604,17 @@ def oauth_start(request, provider):
     return redirect(f"{settings.SUPABASE_URL}/auth/v1/authorize?{query}")
 
 
+def _public_absolute_uri(request, path):
+    """Genera callbacks HTTPS estables aun detrás del proxy de Render."""
+    public_base = str(getattr(settings, "QRMED_PUBLIC_URL", "") or "").rstrip("/")
+    if public_base:
+        return f"{public_base}{path}"
+    absolute = request.build_absolute_uri(path)
+    if not settings.DEBUG and absolute.startswith("http://"):
+        absolute = "https://" + absolute.removeprefix("http://")
+    return absolute
+
+
 def password_reset_request(request):
     if request.method == "POST":
         email = str(request.POST.get("email") or "").strip().lower()
@@ -613,7 +624,7 @@ def password_reset_request(request):
             try:
                 request_password_reset(
                     email,
-                    request.build_absolute_uri(reverse("password_reset_page")),
+                    _public_absolute_uri(request, reverse("password_reset_page")),
                 )
             except SupabaseError as exc:
                 messages.error(request, str(exc))

@@ -21,14 +21,14 @@ from panel.patient_views import (
 )
 from panel.models import Patient
 from panel.services import (
-    SupabaseError, normalize_storage_path, public_storage_url, sign_in,
+    SupabaseError, normalize_storage_path, public_storage_url, request_password_reset, sign_in,
     storage_image_bytes, storage_image_candidates, storage_image_signed_url,
     storage_signed_url, upload_file, versioned_media_url,
 )
 from panel.templatetags.panel_extras import initials, money, payment_method_label, status_label, status_step
 from panel.views import (
     _build_order_lines, _customer_avatar_url, _profile_role_value,
-    _sign_up_or_recover_account, apply_payment_decision,
+    _public_absolute_uri, _sign_up_or_recover_account, apply_payment_decision,
     restore_rejected_order_stock,
 )
 
@@ -281,6 +281,30 @@ class CartAndCheckoutTests(SimpleTestCase):
 
 
 class DemoServiceTests(SimpleTestCase):
+    @override_settings(QRMED_PUBLIC_URL="https://qrmed-emergency-yp3g.onrender.com")
+    def test_password_recovery_uses_stable_public_https_url(self):
+        request = SimpleNamespace(build_absolute_uri=Mock())
+        url = _public_absolute_uri(request, "/recuperar-contrasena/nueva/")
+        self.assertEqual(
+            url,
+            "https://qrmed-emergency-yp3g.onrender.com/recuperar-contrasena/nueva/",
+        )
+        request.build_absolute_uri.assert_not_called()
+
+    @override_settings(
+        DEMO_MODE=False,
+        SUPABASE_URL="https://demo.supabase.co",
+        SUPABASE_ANON_KEY="public-key",
+    )
+    @patch("panel.services.requests.post")
+    def test_password_recovery_sends_redirect_as_query_parameter(self, post):
+        post.return_value = Mock(ok=True)
+        redirect_url = "https://qrmed-emergency-yp3g.onrender.com/recuperar-contrasena/nueva/"
+        request_password_reset("User@Example.com", redirect_url)
+        _, kwargs = post.call_args
+        self.assertEqual(kwargs["params"], {"redirect_to": redirect_url})
+        self.assertEqual(kwargs["json"], {"email": "user@example.com"})
+
     @patch("panel.views._profile_role_labels", return_value={"admin", "user"})
     def test_registration_uses_the_real_user_role_enum(self, role_labels):
         self.assertEqual(_profile_role_value("user"), "user")

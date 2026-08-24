@@ -164,7 +164,10 @@ def request_password_reset(email, redirect_url):
         response = requests.post(
             f"{settings.SUPABASE_URL}/auth/v1/recover",
             headers=_auth_headers(),
-            json={"email": str(email or "").strip().lower(), "redirect_to": redirect_url},
+            # GoTrue/Supabase Auth recibe el destino como query string. Si se
+            # envía dentro del JSON lo ignora y vuelve al Site URL del proyecto.
+            params={"redirect_to": str(redirect_url or "").strip()},
+            json={"email": str(email or "").strip().lower()},
             timeout=15,
         )
     except requests.RequestException as exc:
